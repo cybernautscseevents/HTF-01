@@ -1,6 +1,11 @@
 "use client";
 
-import { ArrowRight, Clock3 } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  CircleDollarSign,
+} from "lucide-react";
 
 const transactions = [
   {
@@ -77,241 +82,274 @@ const transactions = [
   },
 ];
 
-const filters = [
+const flow = [
   {
-    label: "All",
-    count: 24,
+    id: "V1",
+    role: "Victim",
+    amount: "₹1,000",
+    type: "victim",
   },
   {
-    label: "Victim → Aggregator",
-    count: 20,
+    id: "V2",
+    role: "Victim",
+    amount: "₹1,000",
+    type: "victim",
   },
   {
-    label: "Aggregator → Relay",
-    count: 1,
+    id: "V3",
+    role: "Victim",
+    amount: "₹1,000",
+    type: "victim",
   },
   {
-    label: "Relay → Mules",
-    count: 3,
+    id: "V4",
+    role: "Victim",
+    amount: "₹3,000",
+    type: "victim",
+  },
+  {
+    id: "V5",
+    role: "Victim",
+    amount: "₹13,400",
+    type: "victim",
+  },
+  {
+    id: "A",
+    role: "Aggregator",
+    amount: "₹18,400",
+    type: "aggregator",
+  },
+  {
+    id: "B",
+    role: "Relay",
+    amount: "₹13,000",
+    type: "relay",
+  },
+  {
+    id: "C",
+    role: "Mule",
+    amount: "₹5,000",
+    type: "mule",
+  },
+  {
+    id: "D",
+    role: "Mule",
+    amount: "₹4,000",
+    type: "mule",
+  },
+  {
+    id: "E",
+    role: "Mule",
+    amount: "₹4,000",
+    type: "mule",
   },
 ];
 
+function getNodeStyle(type: string) {
+  switch (type) {
+    case "victim":
+      return "border-blue-500/50 bg-blue-500/10 text-blue-300";
+
+    case "aggregator":
+      return "border-red-500/60 bg-red-500/10 text-red-300";
+
+    case "relay":
+      return "border-orange-500/60 bg-orange-500/10 text-orange-300";
+
+    case "mule":
+      return "border-amber-500/60 bg-amber-500/10 text-amber-300";
+
+    default:
+      return "border-slate-700 bg-slate-900 text-slate-300";
+  }
+}
+
 export default function MoneyTrail() {
   return (
-    <div className="space-y-4">
+    <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
+      {/* Header */}
+      <div className="border-b border-slate-800 px-5 py-4">
+        <div className="flex items-center gap-2">
+          <CircleDollarSign size={18} className="text-blue-400" />
 
-      {/* Flow visualization */}
-      <div className="rounded-lg border border-slate-800 bg-[#0b1621] p-5">
-
-        <div className="mb-5 flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-white">
+            <h2 className="text-base font-semibold text-white">
               Money Trail Timeline
-            </h3>
+            </h2>
 
-            <p className="mt-1 text-[10px] text-slate-500">
-              Chronological flow of transactions in this case
+            <p className="mt-0.5 text-xs text-slate-500">
+              Chronological reconstruction of transaction movement
             </p>
           </div>
-
-          <div className="flex items-center gap-2 text-[10px] text-slate-500">
-            <Clock3 size={13} />
-            10:31:04 — 10:34:34
-          </div>
-        </div>
-
-        {/* Flow */}
-        <div className="flex items-center justify-center overflow-x-auto py-5">
-
-          <FlowNode
-            label="V1"
-            role="Victim"
-            type="victim"
-          />
-
-          <Arrow />
-
-          <FlowNode
-            label="A"
-            role="Aggregator"
-            type="aggregator"
-          />
-
-          <Arrow />
-
-          <FlowNode
-            label="B"
-            role="Relay"
-            type="relay"
-          />
-
-          <Arrow />
-
-          <FlowNode
-            label="C"
-            role="Mule"
-            type="mule"
-          />
-
-          <Arrow />
-
-          <FlowNode
-            label="D"
-            role="Mule"
-            type="mule"
-          />
-
-          <Arrow />
-
-          <FlowNode
-            label="E"
-            role="Mule"
-            type="mule"
-          />
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-4">
-          {filters.map((filter, index) => (
-            <button
-              key={filter.label}
-              className={`rounded-full border px-3 py-1.5 text-[10px] transition ${
-                index === 0
-                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
-                  : "border-slate-700 text-slate-500 hover:border-slate-600 hover:text-slate-300"
-              }`}
-            >
-              {filter.label} ({filter.count})
-            </button>
-          ))}
         </div>
       </div>
 
-      {/* Transaction table */}
-      <div className="rounded-lg border border-slate-800 bg-[#0b1621] p-4">
+      {/* Visual Flow */}
+      <div className="border-b border-slate-800 p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-300">
+              Transaction Flow
+            </p>
 
+            <p className="mt-1 text-xs text-slate-500">
+              Follow the movement of funds from victims to downstream accounts
+            </p>
+          </div>
+
+          <div className="hidden text-xs text-slate-500 sm:block">
+            10:31:04 → 10:34:34
+          </div>
+        </div>
+
+        <div className="overflow-x-auto pb-3">
+          <div className="flex min-w-max items-center justify-center gap-2 py-4">
+            {flow.map((node, index) => (
+              <div key={`${node.id}-${index}`} className="flex items-center">
+                <div
+                  className={`group min-w-[105px] rounded-xl border px-3 py-3 text-center transition hover:-translate-y-0.5 ${getNodeStyle(
+                    node.type
+                  )}`}
+                >
+                  <div className="text-sm font-semibold">
+                    {node.id}
+                  </div>
+
+                  <div className="mt-1 text-[11px] opacity-80">
+                    {node.role}
+                  </div>
+
+                  <div className="mt-2 text-xs font-medium text-white">
+                    {node.amount}
+                  </div>
+                </div>
+
+                {index < flow.length - 1 && (
+                  <ArrowRight
+                    size={17}
+                    className="mx-1 shrink-0 text-slate-600"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Flow Explanation */}
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+            <p className="text-xs font-medium text-blue-300">
+              01 · Collection
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Multiple victim accounts send funds into the aggregator.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+            <p className="text-xs font-medium text-red-300">
+              02 · Aggregation & Relay
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Funds are consolidated and rapidly forwarded through the relay.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+            <p className="text-xs font-medium text-amber-300">
+              03 · Distribution
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              The relay splits funds across multiple downstream accounts.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Transaction Table */}
+      <div className="p-5">
         <div className="mb-4">
-          <h3 className="text-sm font-semibold text-white">
-            Transaction Flow
+          <h3 className="text-sm font-medium text-slate-300">
+            Transaction Details
           </h3>
 
-          <p className="mt-1 text-[10px] text-slate-500">
+          <p className="mt-1 text-xs text-slate-500">
             Individual transfers reconstructed from the network
           </p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left text-[10px]">
-
-            <thead className="border-b border-slate-800 text-slate-500">
-              <tr>
-                <th className="px-3 py-2">Time</th>
-                <th className="px-3 py-2">From</th>
-                <th className="px-3 py-2">To</th>
-                <th className="px-3 py-2">Amount</th>
-                <th className="px-3 py-2">Type</th>
-                <th className="px-3 py-2">Note</th>
+          <table className="w-full min-w-[760px] text-left">
+            <thead>
+              <tr className="border-b border-slate-800 text-xs text-slate-500">
+                <th className="px-3 py-3 font-medium">Time</th>
+                <th className="px-3 py-3 font-medium">From</th>
+                <th className="px-3 py-3 font-medium">To</th>
+                <th className="px-3 py-3 font-medium">Amount</th>
+                <th className="px-3 py-3 font-medium">Type</th>
+                <th className="px-3 py-3 font-medium">Description</th>
               </tr>
             </thead>
 
             <tbody>
-              {transactions.map((transaction, index) => (
-                <tr
-                  key={`${transaction.time}-${index}`}
-                  className="border-b border-slate-800/60 transition hover:bg-slate-800/30"
-                >
-                  <td className="px-3 py-3 font-mono text-slate-400">
-                    {transaction.time}
-                  </td>
+              {transactions.map((transaction, index) => {
+                const incoming = transaction.type === "Incoming";
 
-                  <td className="px-3 py-3 font-medium text-slate-200">
-                    {transaction.from}
-                  </td>
+                return (
+                  <tr
+                    key={`${transaction.time}-${index}`}
+                    className="border-b border-slate-900 transition hover:bg-slate-900/60"
+                  >
+                    <td className="px-3 py-3 font-mono text-xs text-slate-400">
+                      {transaction.time}
+                    </td>
 
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-2">
-                      <ArrowRight
-                        size={12}
-                        className="text-slate-600"
-                      />
+                    <td className="px-3 py-3 text-sm font-medium text-slate-300">
+                      {transaction.from}
+                    </td>
 
-                      <span className="font-medium text-slate-200">
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-slate-300">
+                        <ArrowRight size={14} className="text-slate-600" />
                         {transaction.to}
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-3 text-sm font-semibold text-white">
+                      {transaction.amount}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                          incoming
+                            ? "bg-emerald-500/10 text-emerald-400"
+                            : "bg-red-500/10 text-red-400"
+                        }`}
+                      >
+                        {incoming ? (
+                          <ArrowDownRight size={12} />
+                        ) : (
+                          <ArrowUpRight size={12} />
+                        )}
+
+                        {transaction.type}
                       </span>
-                    </div>
-                  </td>
+                    </td>
 
-                  <td className="px-3 py-3 font-medium text-slate-200">
-                    {transaction.amount}
-                  </td>
-
-                  <td className="px-3 py-3">
-                    <span
-                      className={
-                        transaction.type === "Incoming"
-                          ? "rounded bg-emerald-500/10 px-2 py-1 text-emerald-400"
-                          : "rounded bg-red-500/10 px-2 py-1 text-red-400"
-                      }
-                    >
-                      {transaction.type}
-                    </span>
-                  </td>
-
-                  <td className="px-3 py-3 text-slate-500">
-                    {transaction.note}
-                  </td>
-                </tr>
-              ))}
+                    <td className="px-3 py-3 text-xs text-slate-500">
+                      {transaction.note}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
-
           </table>
         </div>
       </div>
-    </div>
-  );
-}
-
-function FlowNode({
-  label,
-  role,
-  type,
-}: {
-  label: string;
-  role: string;
-  type: "victim" | "aggregator" | "relay" | "mule";
-}) {
-  const styles = {
-    victim: "border-blue-500 bg-blue-500/10 text-blue-400",
-    aggregator: "border-red-500 bg-red-500/10 text-red-400",
-    relay: "border-red-500 bg-red-500/10 text-red-400",
-    mule: "border-amber-500 bg-amber-500/10 text-amber-400",
-  };
-
-  return (
-    <div className="flex min-w-[70px] flex-col items-center gap-2">
-      <div
-        className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-xs font-semibold ${styles[type]}`}
-      >
-        {label}
-      </div>
-
-      <div className="text-center">
-        <p className="text-[10px] font-medium text-slate-300">
-          {label}
-        </p>
-
-        <p className="text-[9px] text-slate-600">
-          {role}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function Arrow() {
-  return (
-    <div className="mx-3 text-slate-600">
-      <ArrowRight size={16} />
-    </div>
+    </section>
   );
 }

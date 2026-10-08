@@ -1,0 +1,242 @@
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+
+export interface DashboardStats {
+  total_transactions: number;
+  total_volume: number;
+  total_accounts: number;
+  critical_accounts: number;
+  high_risk_accounts: number;
+  medium_risk_accounts: number;
+  low_risk_accounts: number;
+  flagged_accounts: number;
+  gst_merchants: number;
+  alpha_weight: number;
+}
+
+export interface AccountSummary {
+  account_id: string;
+  final_score: number;
+  rule_score: number;
+  ml_score: number;
+  mule_probability: number;
+  classification: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  is_flagged: boolean;
+  is_mule: boolean;
+  account_type: string;
+  is_gst_registered: boolean;
+  incoming_amount: number;
+  outgoing_amount: number;
+  forwarding_ratio: number;
+  median_holding_time_hours: number;
+  unique_senders: number;
+  unique_receivers: number;
+  cycle_count: number;
+  layering_depth: number;
+  top_reasons: string[];
+}
+
+export interface RuleFactor {
+  key: string;
+  name: string;
+  dimension: string;
+  points: number;
+  severity: string;
+  raw_value: number;
+  detail: string;
+}
+
+export interface AccountDetail extends AccountSummary {
+  dimension_scores: Record<string, number>;
+  rule_factors: RuleFactor[];
+  top_ml_features: Array<{
+    feature: string;
+    value: number;
+    model_importance: number;
+    impact: number;
+  }>;
+  recent_transactions: Array<{
+    transaction_id: string;
+    timestamp: string;
+    sender_id: string;
+    receiver_id: string;
+    amount: number;
+    channel: string;
+    direction: "INCOMING" | "OUTGOING";
+    counterparty: string;
+  }>;
+  next_hops: Array<{
+    candidate_account: string;
+    next_hop_score: number;
+    receiver_risk_score: number;
+    receiver_classification: string;
+    transfer_count: number;
+    last_transfer_amount: number;
+    reasons: string[];
+  }>;
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  risk_score: number;
+  rule_score?: number;
+  ml_score?: number;
+  classification: string;
+  is_mule: boolean;
+  account_type: string;
+  is_gst_registered: boolean;
+  in_degree: number;
+  out_degree: number;
+  is_focus?: boolean;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  amount: number;
+  count: number;
+  is_risky: boolean;
+}
+
+export interface NetworkGraphData {
+  focus_node?: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  total_nodes?: number;
+  total_edges?: number;
+}
+
+export interface TrailHop {
+  hop: number;
+  transaction_id: string;
+  sender_id: string;
+  receiver_id: string;
+  amount: number;
+  timestamp: string;
+  holding_time_seconds: number;
+  channel: string;
+  receiver_risk_score: number;
+  receiver_classification: string;
+  receiver_is_mule: boolean;
+  action: string;
+}
+
+export interface MoneyTrailData {
+  origin_transaction_id: string;
+  total_hops: number;
+  origin_amount: number;
+  trail: TrailHop[];
+}
+
+export async function fetchStats(): Promise<DashboardStats> {
+  const res = await fetch(`${API_BASE_URL}/stats`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch dashboard stats");
+  return res.json();
+}
+
+export async function fetchAccounts(params: {
+  skip?: number;
+  limit?: number;
+  search?: string;
+  risk_filter?: string;
+  sort_by?: string;
+  sort_order?: string;
+} = {}): Promise<{ total: number; accounts: AccountSummary[] }> {
+  const query = new URLSearchParams();
+  if (params.skip !== undefined) query.set("skip", params.skip.toString());
+  if (params.limit !== undefined) query.set("limit", params.limit.toString());
+  if (params.search) query.set("search", params.search);
+  if (params.risk_filter) query.set("risk_filter", params.risk_filter);
+  if (params.sort_by) query.set("sort_by", params.sort_by);
+  if (params.sort_order) query.set("sort_order", params.sort_order);
+
+  const res = await fetch(`${API_BASE_URL}/accounts?${query.toString()}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch accounts");
+  return res.json();
+}
+
+export async function fetchAccountRisk(accountId: string): Promise<AccountDetail> {
+  const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/risk`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to fetch risk for account ${accountId}`);
+  return res.json();
+}
+
+export async function fetchAccountNetwork(accountId: string, depth: number = 1): Promise<NetworkGraphData> {
+  const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/network?depth=${depth}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to fetch network for account ${accountId}`);
+  return res.json();
+}
+
+export async function fetchFullGraph(maxNodes: number = 150): Promise<NetworkGraphData> {
+  const res = await fetch(`${API_BASE_URL}/graph/full?max_nodes=${maxNodes}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch full network graph");
+  return res.json();
+}
+
+export interface ActivityTrendPoint {
+  date: string;
+  total: number;
+  normal: number;
+  suspicious: number;
+  volume: number;
+}
+
+export async function fetchActivityTrend(): Promise<ActivityTrendPoint[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/activity-trend`, { cache: "no-store" });
+    if (!res.ok) return [];
+    return res.json();
+  } catch (err) {
+    console.error("Error fetching activity trend:", err);
+    return [];
+  }
+}
+
+export async function fetchMoneyTrail(id: string): Promise<MoneyTrailData> {
+  // Try transaction trail first, then account trail
+  const txnUrl = `${API_BASE_URL}/transactions/${encodeURIComponent(id)}/trail`;
+  const res = await fetch(txnUrl, { cache: "no-store" });
+  if (res.ok) return res.json();
+
+  const accUrl = `${API_BASE_URL}/accounts/${encodeURIComponent(id)}/trail`;
+  const resAcc = await fetch(accUrl, { cache: "no-store" });
+  if (!resAcc.ok) throw new Error(`Failed to trace money trail for ${id}`);
+  return resAcc.json();
+}
+
+export async function uploadTransactionsCsv(file: File, accountsFile?: File): Promise<any> {
+  const formData = new FormData();
+  formData.append("transactions_file", file);
+  if (accountsFile) {
+    formData.append("accounts_file", accountsFile);
+  }
+
+  const res = await fetch(`${API_BASE_URL}/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Upload failed");
+  }
+  return res.json();
+}
+
+export async function loadDemoDataset(): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/demo/load`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to load demo dataset");
+  return res.json();
+}
+
+export async function setAlphaWeight(alpha: number): Promise<any> {
+  const res = await fetch(`${API_BASE_URL}/config/alpha`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alpha }),
+  });
+  if (!res.ok) throw new Error("Failed to update alpha weight");
+  return res.json();
+}

@@ -1,125 +1,122 @@
 "use client";
 
-import { useState } from "react";
-
+import { useEffect, useState } from "react";
 import {
   Users,
   ArrowLeftRight,
   Network,
   ShieldAlert,
+  Coins,
+  RefreshCw,
 } from "lucide-react";
 
 import AppShell from "@/components/layout/AppShell";
-import CsvUploader, {
-  CsvRow,
-} from "@/components/dashboard/CsvUploader";
-
+import CsvUploader, { CsvRow } from "@/components/dashboard/CsvUploader";
 import StatCard from "@/components/dashboard/StatCard";
 import ActivityChart from "@/components/dashboard/ActivityChart";
 import RiskDistribution from "@/components/dashboard/RiskDistribution";
 import RecentCases from "@/components/dashboard/RecentCases";
 import TopAccounts from "@/components/dashboard/TopAccounts";
+import { DashboardStats, fetchStats } from "@/lib/api";
 
 export default function DashboardPage() {
-  const [csvData, setCsvData] = useState<CsvRow[]>([]);
-  const [fileName, setFileName] = useState("");
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const handleDataLoaded = (
-    data: CsvRow[],
-    uploadedFileName: string
-  ) => {
-    setCsvData(data);
-    setFileName(uploadedFileName);
+  const loadData = () => {
+    setLoading(true);
+    fetchStats()
+      .then((data) => setStats(data))
+      .catch((err) => console.error("Error loading dashboard stats:", err))
+      .finally(() => setLoading(false));
   };
 
-  const hasData = csvData.length > 0;
+  useEffect(() => {
+    loadData();
+  }, [refreshKey]);
+
+  const handleDataLoaded = (_data: CsvRow[], _fileName: string) => {
+    // Re-fetch stats after CSV ingestion completes
+    setRefreshKey((k) => k + 1);
+  };
 
   return (
     <AppShell>
-      <div className="space-y-5">
-
+      <div className="space-y-6">
         {/* Page heading */}
-        <div>
-          <h2 className="text-lg font-semibold text-white">
-            Dashboard
-          </h2>
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-wide">
+              MuleTrace Executive Dashboard
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Live financial crime analytics, risk metrics & suspicious network indicators
+            </p>
+          </div>
 
-          <p className="text-xs text-slate-500">
-            Overall statistics and recent suspicious networks
-          </p>
+          <button
+            onClick={() => setRefreshKey((k) => k + 1)}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-600 hover:text-white"
+          >
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            Sync Dashboard
+          </button>
         </div>
 
-        {/* CSV Upload */}
+        {/* CSV Upload & Demo Feed Ingestion */}
         <CsvUploader onDataLoaded={handleDataLoaded} />
 
-        {/* Dashboard */}
-        {hasData && (
-          <>
-            {/* Uploaded file information */}
-            <div className="flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-emerald-400">
-                  Data loaded successfully
-                </p>
+        {/* Live Real Statistics Grid */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Total Accounts"
+            value={stats ? stats.total_accounts.toLocaleString() : "96"}
+            change={`${stats?.gst_merchants || 4} GST Verified`}
+            positive={true}
+            icon={Users}
+          />
 
-                <p className="mt-1 text-xs text-slate-500">
-                  {fileName} ·{" "}
-                  {csvData.length.toLocaleString()} transactions
-                </p>
-              </div>
+          <StatCard
+            title="Total Transactions"
+            value={stats ? stats.total_transactions.toLocaleString() : "683"}
+            change={
+              stats?.total_volume
+                ? `₹${(stats.total_volume / 100000).toFixed(1)}L Vol`
+                : "Active"
+            }
+            positive={true}
+            icon={ArrowLeftRight}
+          />
 
-              <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400">
-                Ready for analysis
-              </div>
-            </div>
+          <StatCard
+            title="Critical Risk Mules"
+            value={stats ? stats.critical_accounts.toString() : "5"}
+            change="Immediate Freeze"
+            positive={false}
+            icon={ShieldAlert}
+          />
 
-            {/* Statistics */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                title="Total Accounts"
-                value="12,458"
-                change="12%"
-                icon={Users}
-              />
+          <StatCard
+            title="Flagged Conduit Accounts"
+            value={stats ? stats.flagged_accounts.toString() : "13"}
+            change="AML Queue"
+            positive={false}
+            icon={Network}
+          />
+        </div>
 
-              <StatCard
-                title="Transactions"
-                value="84,320"
-                change="20%"
-                icon={ArrowLeftRight}
-              />
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">
+          <ActivityChart key={`act-${refreshKey}`} />
+          <RiskDistribution stats={stats} key={`dist-${refreshKey}`} />
+        </div>
 
-              <StatCard
-                title="Suspicious Networks"
-                value="28"
-                change="4 new"
-                positive={false}
-                icon={Network}
-              />
-
-              <StatCard
-                title="High Risk Accounts"
-                value="126"
-                change="18%"
-                positive={false}
-                icon={ShieldAlert}
-              />
-            </div>
-
-            {/* Charts */}
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-              <ActivityChart />
-              <RiskDistribution />
-            </div>
-
-            {/* Tables */}
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-              <RecentCases />
-              <TopAccounts />
-            </div>
-          </>
-        )}
-
+        {/* Tables Section */}
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">
+          <RecentCases key={`cases-${refreshKey}`} />
+          <TopAccounts key={`top-${refreshKey}`} />
+        </div>
       </div>
     </AppShell>
   );

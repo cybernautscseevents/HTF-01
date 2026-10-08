@@ -28,44 +28,9 @@ const navigation = [
     icon: Search,
   },
   {
-    name: "Networks",
-    href: "/networks",
-    icon: Network,
-  },
-  {
     name: "Accounts",
     href: "/accounts",
     icon: Users,
-  },
-  {
-    name: "Transactions",
-    href: "/transactions",
-    icon: ArrowLeftRight,
-  },
-  {
-    name: "Cases",
-    href: "/cases",
-    icon: FolderKanban,
-  },
-  {
-    name: "Alerts",
-    href: "/alerts",
-    icon: Bell,
-  },
-  {
-    name: "Reports",
-    href: "/reports",
-    icon: FileText,
-  },
-  {
-    name: "Synthetic Data",
-    href: "/synthetic-data",
-    icon: Database,
-  },
-  {
-    name: "Settings",
-    href: "/settings",
-    icon: Settings,
   },
 ];
 

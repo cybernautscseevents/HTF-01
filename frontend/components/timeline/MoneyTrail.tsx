@@ -1,355 +1,199 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
   CircleDollarSign,
+  Clock,
+  ShieldAlert,
 } from "lucide-react";
+import { MoneyTrailData, TrailHop, fetchMoneyTrail } from "@/lib/api";
 
-const transactions = [
-  {
-    time: "10:31:04",
-    from: "V1",
-    to: "A",
-    amount: "₹1,000",
-    type: "Incoming",
-    note: "Victim transfer",
-  },
-  {
-    time: "10:31:09",
-    from: "V2",
-    to: "A",
-    amount: "₹1,000",
-    type: "Incoming",
-    note: "Victim transfer",
-  },
-  {
-    time: "10:31:12",
-    from: "V3",
-    to: "A",
-    amount: "₹1,000",
-    type: "Incoming",
-    note: "Victim transfer",
-  },
-  {
-    time: "10:31:15",
-    from: "V4",
-    to: "A",
-    amount: "₹3,000",
-    type: "Incoming",
-    note: "Victim transfer",
-  },
-  {
-    time: "10:31:19",
-    from: "V5",
-    to: "A",
-    amount: "₹13,400",
-    type: "Incoming",
-    note: "Victim transfer",
-  },
-  {
-    time: "10:34:12",
-    from: "A",
-    to: "B",
-    amount: "₹18,400",
-    type: "Outgoing",
-    note: "Aggregated transfer (92%)",
-  },
-  {
-    time: "10:34:27",
-    from: "B",
-    to: "C",
-    amount: "₹5,000",
-    type: "Outgoing",
-    note: "Split transfer",
-  },
-  {
-    time: "10:34:31",
-    from: "B",
-    to: "D",
-    amount: "₹4,000",
-    type: "Outgoing",
-    note: "Split transfer",
-  },
-  {
-    time: "10:34:34",
-    from: "B",
-    to: "E",
-    amount: "₹4,000",
-    type: "Outgoing",
-    note: "Split transfer",
-  },
-];
-
-const flow = [
-  {
-    id: "V1",
-    role: "Victim",
-    amount: "₹1,000",
-    type: "victim",
-  },
-  {
-    id: "V2",
-    role: "Victim",
-    amount: "₹1,000",
-    type: "victim",
-  },
-  {
-    id: "V3",
-    role: "Victim",
-    amount: "₹1,000",
-    type: "victim",
-  },
-  {
-    id: "V4",
-    role: "Victim",
-    amount: "₹3,000",
-    type: "victim",
-  },
-  {
-    id: "V5",
-    role: "Victim",
-    amount: "₹13,400",
-    type: "victim",
-  },
-  {
-    id: "A",
-    role: "Aggregator",
-    amount: "₹18,400",
-    type: "aggregator",
-  },
-  {
-    id: "B",
-    role: "Relay",
-    amount: "₹13,000",
-    type: "relay",
-  },
-  {
-    id: "C",
-    role: "Mule",
-    amount: "₹5,000",
-    type: "mule",
-  },
-  {
-    id: "D",
-    role: "Mule",
-    amount: "₹4,000",
-    type: "mule",
-  },
-  {
-    id: "E",
-    role: "Mule",
-    amount: "₹4,000",
-    type: "mule",
-  },
-];
-
-function getNodeStyle(type: string) {
-  switch (type) {
-    case "victim":
-      return "border-blue-500/50 bg-blue-500/10 text-blue-300";
-
-    case "aggregator":
-      return "border-red-500/60 bg-red-500/10 text-red-300";
-
-    case "relay":
-      return "border-orange-500/60 bg-orange-500/10 text-orange-300";
-
-    case "mule":
-      return "border-amber-500/60 bg-amber-500/10 text-amber-300";
-
-    default:
-      return "border-slate-700 bg-slate-900 text-slate-300";
-  }
+interface MoneyTrailProps {
+  seedId?: string;
+  trailData?: MoneyTrailData | null;
 }
 
-export default function MoneyTrail() {
-  return (
-    <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
-      {/* Header */}
-      <div className="border-b border-slate-800 px-5 py-4">
-        <div className="flex items-center gap-2">
-          <CircleDollarSign size={18} className="text-blue-400" />
+export default function MoneyTrail({ seedId = "MULE_RAPID_047", trailData: externalTrail }: MoneyTrailProps) {
+  const [data, setData] = useState<MoneyTrailData | null>(externalTrail || null);
+  const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (externalTrail) {
+      setData(externalTrail);
+      return;
+    }
+    if (seedId) {
+      setLoading(true);
+      fetchMoneyTrail(seedId)
+        .then((res) => setData(res))
+        .catch((err) => console.error("Error loading money trail:", err))
+        .finally(() => setLoading(false));
+    }
+  }, [seedId, externalTrail]);
+
+  const trailHops = data?.trail || [];
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#071019] shadow-2xl">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <CircleDollarSign size={20} className="text-blue-400" />
           <div>
             <h2 className="text-base font-semibold text-white">
-              Money Trail Timeline
+              Downstream Money Trail Propagation
             </h2>
-
-            <p className="mt-0.5 text-xs text-slate-500">
-              Chronological reconstruction of transaction movement
+            <p className="mt-0.5 text-xs text-slate-400">
+              Chronological hop-by-hop tracking of fund dissipation and intermediary mules
             </p>
           </div>
         </div>
+        {data && (
+          <div className="flex items-center gap-3 text-xs">
+            <span className="rounded bg-slate-800 px-2.5 py-1 font-mono text-slate-300">
+              Total Hops: {data.total_hops}
+            </span>
+            <span className="rounded bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 font-mono font-bold text-blue-400">
+              Initial Amount: ₹{data.origin_amount?.toLocaleString()}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Visual Flow */}
-      <div className="border-b border-slate-800 p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-300">
-              Transaction Flow
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Follow the movement of funds from victims to downstream accounts
-            </p>
-          </div>
-
-          <div className="hidden text-xs text-slate-500 sm:block">
-            10:31:04 → 10:34:34
-          </div>
+      {loading && (
+        <div className="p-8 text-center text-xs text-slate-400">
+          Tracing downstream fund movements...
         </div>
+      )}
 
-        <div className="overflow-x-auto pb-3">
-          <div className="flex min-w-max items-center justify-center gap-2 py-4">
-            {flow.map((node, index) => (
-              <div key={`${node.id}-${index}`} className="flex items-center">
-                <div
-                  className={`group min-w-[105px] rounded-xl border px-3 py-3 text-center transition hover:-translate-y-0.5 ${getNodeStyle(
-                    node.type
-                  )}`}
-                >
-                  <div className="text-sm font-semibold">
-                    {node.id}
-                  </div>
-
-                  <div className="mt-1 text-[11px] opacity-80">
-                    {node.role}
-                  </div>
-
-                  <div className="mt-2 text-xs font-medium text-white">
-                    {node.amount}
-                  </div>
-                </div>
-
-                {index < flow.length - 1 && (
-                  <ArrowRight
-                    size={17}
-                    className="mx-1 shrink-0 text-slate-600"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+      {!loading && trailHops.length === 0 && (
+        <div className="p-8 text-center text-xs text-slate-500">
+          No downstream forwarding trail found for this transaction/account.
         </div>
+      )}
 
-        {/* Flow Explanation */}
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
-            <p className="text-xs font-medium text-blue-300">
-              01 · Collection
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-400">
-              Multiple victim accounts send funds into the aggregator.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
-            <p className="text-xs font-medium text-red-300">
-              02 · Aggregation & Relay
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-400">
-              Funds are consolidated and rapidly forwarded through the relay.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-            <p className="text-xs font-medium text-amber-300">
-              03 · Distribution
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-400">
-              The relay splits funds across multiple downstream accounts.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Transaction Table */}
-      <div className="p-5">
-        <div className="mb-4">
-          <h3 className="text-sm font-medium text-slate-300">
-            Transaction Details
-          </h3>
-
-          <p className="mt-1 text-xs text-slate-500">
-            Individual transfers reconstructed from the network
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left">
-            <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-500">
-                <th className="px-3 py-3 font-medium">Time</th>
-                <th className="px-3 py-3 font-medium">From</th>
-                <th className="px-3 py-3 font-medium">To</th>
-                <th className="px-3 py-3 font-medium">Amount</th>
-                <th className="px-3 py-3 font-medium">Type</th>
-                <th className="px-3 py-3 font-medium">Description</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {transactions.map((transaction, index) => {
-                const incoming = transaction.type === "Incoming";
-
+      {/* Visual Flow Pipeline */}
+      {!loading && trailHops.length > 0 && (
+        <div className="border-b border-slate-800 p-5">
+          <div className="overflow-x-auto pb-4">
+            <div className="flex min-w-max items-center justify-start gap-3 py-3">
+              {trailHops.map((hop, index) => {
+                const isOrigin = hop.hop === 0;
+                const isCrit = hop.receiver_classification === "CRITICAL";
                 return (
-                  <tr
-                    key={`${transaction.time}-${index}`}
-                    className="border-b border-slate-900 transition hover:bg-slate-900/60"
-                  >
-                    <td className="px-3 py-3 font-mono text-xs text-slate-400">
-                      {transaction.time}
-                    </td>
-
-                    <td className="px-3 py-3 text-sm font-medium text-slate-300">
-                      {transaction.from}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1.5 text-sm font-medium text-slate-300">
-                        <ArrowRight size={14} className="text-slate-600" />
-                        {transaction.to}
+                  <div key={hop.transaction_id + index} className="flex items-center">
+                    <div
+                      className={`min-w-[140px] rounded-xl border p-3 text-center transition shadow-lg ${
+                        isOrigin
+                          ? "border-blue-500/60 bg-blue-500/10 text-blue-300"
+                          : isCrit
+                          ? "border-red-500/60 bg-red-500/10 text-red-300"
+                          : "border-orange-500/60 bg-orange-500/10 text-orange-300"
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        {isOrigin ? "Origin Source" : `Hop #${hop.hop}`}
                       </div>
-                    </td>
+                      <div className="mt-1 font-mono text-sm font-bold text-white">
+                        {hop.receiver_id}
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-emerald-400">
+                        ₹{hop.amount.toLocaleString()}
+                      </div>
+                      <div className="mt-2 flex items-center justify-center gap-1 text-[10px] text-slate-400">
+                        <Clock size={10} />
+                        <span>
+                          {hop.holding_time_seconds > 0
+                            ? `${hop.holding_time_seconds}s hold`
+                            : "Direct"}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[9px] font-bold uppercase">
+                        {hop.receiver_classification} ({hop.receiver_risk_score} pts)
+                      </div>
+                    </div>
 
-                    <td className="px-3 py-3 text-sm font-semibold text-white">
-                      {transaction.amount}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                          incoming
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : "bg-red-500/10 text-red-400"
-                        }`}
-                      >
-                        {incoming ? (
-                          <ArrowDownRight size={12} />
-                        ) : (
-                          <ArrowUpRight size={12} />
-                        )}
-
-                        {transaction.type}
-                      </span>
-                    </td>
-
-                    <td className="px-3 py-3 text-xs text-slate-500">
-                      {transaction.note}
-                    </td>
-                  </tr>
+                    {index < trailHops.length - 1 && (
+                      <div className="flex flex-col items-center mx-2 text-slate-500">
+                        <ArrowRight size={20} className="text-slate-500" />
+                        <span className="text-[9px] font-mono text-slate-400">
+                          {hop.channel}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Transaction Details Table */}
+      {!loading && trailHops.length > 0 && (
+        <div className="p-5">
+          <div className="mb-3">
+            <h3 className="text-sm font-semibold text-slate-200">
+              Reconstructed Evidence Trail
+            </h3>
+            <p className="text-xs text-slate-500">
+              Sequential transaction records verifying the chain of custody
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="px-3 py-2.5 font-medium">Hop</th>
+                  <th className="px-3 py-2.5 font-medium">Timestamp</th>
+                  <th className="px-3 py-2.5 font-medium">Sender</th>
+                  <th className="px-3 py-2.5 font-medium">Receiver</th>
+                  <th className="px-3 py-2.5 font-medium">Amount</th>
+                  <th className="px-3 py-2.5 font-medium">Holding Time</th>
+                  <th className="px-3 py-2.5 font-medium">Receiver Risk</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-900">
+                {trailHops.map((hop) => (
+                  <tr key={hop.transaction_id} className="hover:bg-slate-900/50">
+                    <td className="px-3 py-2.5 font-mono text-slate-400">#{hop.hop}</td>
+                    <td className="px-3 py-2.5 font-mono text-slate-400">
+                      {new Date(hop.timestamp).toLocaleTimeString()}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono font-medium text-slate-200">
+                      {hop.sender_id}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono font-semibold text-white">
+                      {hop.receiver_id}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono font-bold text-emerald-400">
+                      ₹{hop.amount.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-300">
+                      {hop.holding_time_seconds > 0 ? `${hop.holding_time_seconds} seconds` : "Immediate"}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
+                          hop.receiver_classification === "CRITICAL"
+                            ? "bg-red-500/10 text-red-400 border border-red-500/30"
+                            : "bg-orange-500/10 text-orange-400 border border-orange-500/30"
+                        }`}
+                      >
+                        {hop.receiver_risk_score} pts ({hop.receiver_classification})
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

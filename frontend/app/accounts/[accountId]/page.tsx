@@ -5,6 +5,8 @@ import AccountTabs from "@/components/accounts/AccountTabs";
 import RiskFactors from "@/components/accounts/RiskFactors";
 import LinkedCases from "@/components/accounts/LinkedCases";
 
+export const instant = false;
+
 interface AccountPageProps {
   params: Promise<{
     accountId: string;

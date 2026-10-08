@@ -23,6 +23,8 @@ class GraphEngine:
 
         # Add edges to MultiDiGraph preserving every transaction
         for _, row in txn_df.iterrows():
+            if "is_successful" in row and not bool(row["is_successful"]):
+                continue
             sender = str(row["sender_id"])
             receiver = str(row["receiver_id"])
             amt = float(row["amount"])
@@ -39,6 +41,8 @@ class GraphEngine:
                 transaction_id=txn_id,
                 amount=amt,
                 timestamp=ts,
+                sent_at=row.get("sent_at", ts),
+                received_at=row.get("received_at", ts),
                 channel=channel
             )
 

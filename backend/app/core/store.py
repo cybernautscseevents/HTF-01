@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import threading
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from app.graph.graph_engine import GraphEngine
 from app.graph.trail_tracer import TrailTracer
@@ -36,6 +37,7 @@ class DataStore:
         self.alpha: float = DEFAULT_ALPHA
         self.scores_cache: Dict[str, Dict[str, Any]] = {}
         self.stats: Dict[str, Any] = {}
+        self.network_cases: List[Dict[str, Any]] = []
         self.is_loaded: bool = False
 
     def process_and_load(
@@ -155,7 +157,10 @@ class DataStore:
                     "layering_depth": int(f_row.get("layering_depth", 0)),
                 }
 
-            # 6. Global Stats Calculation
+            # 6. Detect connected transaction networks and score timing risk.
+            self.network_cases = self._build_network_cases()
+
+            # 7. Global Stats Calculation
             total_accounts = len(self.scores_cache)
             crit_count = sum(1 for a in self.scores_cache.values() if a["classification"] == "CRITICAL")
             high_count = sum(1 for a in self.scores_cache.values() if a["classification"] == "HIGH")
@@ -173,10 +178,105 @@ class DataStore:
                 "low_risk_accounts": low_count,
                 "flagged_accounts": crit_count + high_count,
                 "gst_merchants": merchant_count,
+                "transaction_networks": len(self.network_cases),
+                "immediate_transactions": int(
+                    (self.transactions_df["transfer_latency_seconds"] <= 60).sum()
+                    if "transfer_latency_seconds" in self.transactions_df.columns
+                    else 0
+                ),
                 "alpha_weight": self.alpha
             }
 
             self.is_loaded = True
+
+    def _build_network_cases(self) -> List[Dict[str, Any]]:
+        """Create stable network IDs and case summaries from successful transfers."""
+        if self.transactions_df.empty or self.graph_engine.simple_graph.number_of_nodes() == 0:
+            return []
+
+        components = list(
+            __import__("networkx").weakly_connected_components(self.graph_engine.simple_graph)
+        )
+        account_to_network: Dict[str, str] = {}
+        cases: List[Dict[str, Any]] = []
+
+        for index, members in enumerate(
+            sorted(components, key=lambda component: (-len(component), sorted(component)[0]))
+        ):
+            network_id = f"NET-{datetime.now().strftime('%Y%m%d')}-{index + 1:03d}"
+            member_ids = sorted(str(member) for member in members)
+            for account_id in member_ids:
+                account_to_network[account_id] = network_id
+
+            network_txns = self.transactions_df[
+                self.transactions_df["sender_id"].isin(member_ids)
+                & self.transactions_df["receiver_id"].isin(member_ids)
+                & (
+                    self.transactions_df["is_successful"]
+                    if "is_successful" in self.transactions_df.columns
+                    else True
+                )
+            ]
+            if network_txns.empty:
+                continue
+
+            immediate_count = int(
+                (network_txns["transfer_latency_seconds"] <= 60).sum()
+                if "transfer_latency_seconds" in network_txns.columns
+                else 0
+            )
+            immediate_ratio = immediate_count / max(len(network_txns), 1)
+            account_scores = [
+                float(self.scores_cache.get(account_id, {}).get("final_score", 0.0))
+                for account_id in member_ids
+            ]
+            account_risk = max(account_scores, default=0.0)
+            timing_risk = min(100.0, immediate_ratio * 100.0)
+            network_score = round(min(100.0, (account_risk * 0.7) + (timing_risk * 0.3)), 1)
+
+            if network_score >= CRITICAL_THRESHOLD:
+                status = "Critical"
+            elif network_score >= HIGH_THRESHOLD:
+                status = "High"
+            elif network_score >= MEDIUM_THRESHOLD:
+                status = "Investigating"
+            else:
+                status = "Closed"
+
+            cases.append({
+                "network_id": network_id,
+                "case_id": f"CAS-{datetime.now().strftime('%Y')}-{index + 1:03d}",
+                "reported_date": network_txns["timestamp"].max().strftime("%d %b %Y"),
+                "amount": round(float(network_txns["amount"].sum()), 2),
+                "people_involved": len(member_ids),
+                "member_accounts": member_ids,
+                "transaction_count": len(network_txns),
+                "immediate_transaction_count": immediate_count,
+                "immediate_transaction_ratio": round(immediate_ratio, 4),
+                "risk_score": network_score,
+                "status": status,
+                "classification": status.upper() if status != "Investigating" else "MEDIUM",
+                "role": self._network_role(member_ids),
+            })
+
+        cases.sort(key=lambda case: case["risk_score"], reverse=True)
+        for case in cases:
+            for account_id in case["member_accounts"]:
+                if account_id in self.scores_cache:
+                    self.scores_cache[account_id]["network_id"] = case["network_id"]
+        return cases
+
+    def _network_role(self, member_ids: List[str]) -> str:
+        """Describe the dominant topology role for a network."""
+        if not member_ids:
+            return "Unknown"
+        max_in = max(self.scores_cache.get(acc, {}).get("unique_senders", 0) for acc in member_ids)
+        max_out = max(self.scores_cache.get(acc, {}).get("unique_receivers", 0) for acc in member_ids)
+        if max_in > max_out * 1.5:
+            return "Aggregator"
+        if max_out > max_in * 1.5:
+            return "Distributor"
+        return "Relay"
 
     def set_alpha(self, new_alpha: float):
         """
@@ -327,6 +427,10 @@ class DataStore:
     def get_stats(self) -> Dict[str, Any]:
         with self.lock:
             return self.stats
+
+    def get_network_cases(self, limit: int = 10) -> List[Dict[str, Any]]:
+        with self.lock:
+            return self.network_cases[:limit]
 
     def get_activity_trend(self) -> List[Dict[str, Any]]:
         with self.lock:

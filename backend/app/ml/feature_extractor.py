@@ -60,13 +60,16 @@ def extract_account_features(
     rcvd_by_acc = defaultdict(list)
 
     for _, row in txn_df.iterrows():
+        if "is_successful" in row and not bool(row["is_successful"]):
+            continue
         s = str(row["sender_id"])
         r = str(row["receiver_id"])
         amt = float(row["amount"])
-        ts = row["timestamp"]
+        sent_at = row.get("sent_at", row["timestamp"])
+        received_at = row.get("received_at", row["timestamp"])
 
-        sent_by_acc[s].append((ts, amt))
-        rcvd_by_acc[r].append((ts, amt))
+        sent_by_acc[s].append((sent_at, amt))
+        rcvd_by_acc[r].append((received_at, amt))
 
     feature_rows = []
 

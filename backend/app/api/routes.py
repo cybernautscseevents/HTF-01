@@ -39,7 +39,8 @@ async def upload_csv(
         return {
             "status": "success",
             "message": f"Successfully ingested {len(txn_df)} transactions across {stats.get('total_accounts', 0)} accounts.",
-            "stats": stats
+            "stats": stats,
+            "network_cases": store.get_network_cases(),
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to process CSV files: {str(e)}")
@@ -67,11 +68,34 @@ def get_dashboard_stats():
     Returns global system KPIs for top KPI dashboard strip.
     """
     if not store.is_loaded:
-        # Load demo dataset automatically if empty
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting dashboard statistics.")
 
     return store.get_stats()
+
+
+@router.get("/dashboard")
+def get_dashboard_snapshot():
+    """
+    Returns one consistent snapshot for the executive dashboard.
+    The snapshot is read only after the current dataset has completed the
+    backend parsing, ML inference, and rule-scoring pipeline.
+    """
+    if not store.is_loaded:
+        raise HTTPException(
+            status_code=409,
+            detail="No bank dataset has been analyzed yet. Upload a CSV first.",
+        )
+
+    return {
+        "stats": store.get_stats(),
+        "activity": store.get_activity_trend(),
+        "top_accounts": store.get_accounts(
+            limit=6,
+            sort_by="final_score",
+            sort_order="desc",
+        )["accounts"],
+        "network_cases": store.get_network_cases(),
+    }
 
 
 @router.get("/accounts")
@@ -87,8 +111,7 @@ def list_accounts(
     Lists accounts with pagination, search, risk level filtering, and sorting.
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting accounts.")
 
     return store.get_accounts(
         skip=skip,
@@ -112,8 +135,7 @@ def get_account_risk(account_id: str):
     - Recent transactions and predicted next hops
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting risk details.")
 
     detail = store.get_account_detail(account_id)
     if not detail:
@@ -127,8 +149,7 @@ def get_account_network(account_id: str, depth: int = Query(1, ge=1, le=3)):
     Returns ego-network subgraph (nodes & directed links) surrounding the account.
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting network details.")
 
     return store.get_subgraph(account_id, depth=depth)
 
@@ -139,8 +160,7 @@ def get_transaction_money_trail(transaction_id: str):
     Traces sequential downstream money movement starting from a reported scam transaction.
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting transaction trails.")
 
     trail_res = store.get_money_trail_txn(transaction_id)
     if "error" in trail_res:
@@ -154,8 +174,7 @@ def get_account_money_trail(account_id: str):
     Traces downstream money movement starting from an account.
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting account trails.")
 
     trail_res = store.get_money_trail_acc(account_id)
     if "error" in trail_res:
@@ -169,8 +188,7 @@ def get_next_hops(account_id: str):
     Returns ranked downstream candidate accounts with transparent explainability signals.
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting next hops.")
 
     return {
         "account_id": account_id,
@@ -184,8 +202,7 @@ def get_full_graph(max_nodes: int = Query(250, ge=10, le=1000)):
     Returns global network graph for the central interactive canvas visualization.
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting the transaction graph.")
 
     return store.get_full_graph(max_nodes=max_nodes)
 
@@ -210,7 +227,6 @@ def get_activity_trend():
     Returns time-series transaction trend (normal vs suspicious) for the dashboard chart.
     """
     if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting activity.")
 
     return store.get_activity_trend()

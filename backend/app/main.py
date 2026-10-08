@@ -5,17 +5,11 @@ from contextlib import asynccontextmanager
 from app.api.routes import router
 from app.core.config import CORS_ORIGINS
 from app.core.store import DataStore
-from app.data.synthetic_generator import generate_synthetic_banking_data
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: preload simulated demo dataset in memory so endpoints are immediately active
-    store = DataStore()
-    if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
-        print("FinGuard Engine initialized: Demo synthetic banking dataset loaded in-memory.")
+    # Analysis state is intentionally empty until a bank uploads a CSV.
     yield
     # Shutdown logic if any
 
@@ -51,6 +45,7 @@ def root():
         "endpoints": {
             "upload_csv": "POST /api/upload",
             "load_demo": "POST /api/demo/load",
+            "dashboard": "GET /api/dashboard",
             "list_accounts": "GET /api/accounts",
             "account_risk": "GET /api/accounts/{id}/risk",
             "ego_network": "GET /api/accounts/{id}/network",
@@ -67,9 +62,6 @@ def root():
 @app.get("/health")
 def health_check():
     store = DataStore()
-    if not store.is_loaded:
-        txn_df, acc_df = generate_synthetic_banking_data()
-        store.process_and_load(txn_df, acc_df)
     return {
         "status": "healthy",
         "is_data_loaded": store.is_loaded,

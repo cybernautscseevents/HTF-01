@@ -22,6 +22,12 @@ TRANSACTION_COLUMN_MAP = {
     "date": "timestamp",
     "time": "timestamp",
     "created_at": "timestamp",
+    "time_sent": "sent_at",
+    "sent_time": "sent_at",
+    "sent_at": "sent_at",
+    "time_received": "received_at",
+    "received_time": "received_at",
+    "received_at": "received_at",
     
     # sender_id
     "sender_id": "sender_id",
@@ -32,6 +38,8 @@ TRANSACTION_COLUMN_MAP = {
     "origin_account": "sender_id",
     "from": "sender_id",
     "payer": "sender_id",
+    "sender_account_no": "sender_id",
+    "sender_account_number": "sender_id",
     
     # receiver_id
     "receiver_id": "receiver_id",
@@ -42,6 +50,8 @@ TRANSACTION_COLUMN_MAP = {
     "destination_account": "receiver_id",
     "to": "receiver_id",
     "payee": "receiver_id",
+    "receiver_account_no": "receiver_id",
+    "receiver_account_number": "receiver_id",
     
     # amount
     "amount": "amount",
@@ -66,6 +76,8 @@ TRANSACTION_COLUMN_MAP = {
     "status": "status",
     "txn_status": "status",
     "state": "status",
+    "transfer_status": "status",
+    "transfer_success": "status",
 }
 
 ACCOUNT_COLUMN_MAP = {
@@ -117,12 +129,29 @@ def parse_transactions_csv(content: bytes) -> pd.DataFrame:
     df = df.rename(columns=col_mapping)
     
     # Ensure required columns exist
-    required_cols = ["transaction_id", "timestamp", "sender_id", "receiver_id", "amount"]
+    # A bank feed may provide separate send and receive times. The backend keeps
+    # both for latency/immediate-forwarding analysis and derives a common
+    # timestamp for existing graph and trend consumers.
+    if "sent_at" in df.columns:
+        df["sent_at"] = pd.to_datetime(df["sent_at"], errors="coerce")
+    if "received_at" in df.columns:
+        df["received_at"] = pd.to_datetime(df["received_at"], errors="coerce")
+    if "timestamp" not in df.columns:
+        if "received_at" in df.columns:
+            df["timestamp"] = df["received_at"]
+        elif "sent_at" in df.columns:
+            df["timestamp"] = df["sent_at"]
+
+    required_cols = ["transaction_id", "sender_id", "receiver_id"]
+    if "timestamp" not in df.columns:
+        raise ValueError("CSV must contain timestamp, time_sent, or time_received")
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
         raise ValueError(f"CSV is missing essential transaction columns: {missing}. Available: {list(df.columns)}")
         
     # Optional columns defaults
+    if "amount" not in df.columns:
+        df["amount"] = 0.0
     if "channel" not in df.columns:
         df["channel"] = "UPI"
     if "transaction_type" not in df.columns:
@@ -136,10 +165,26 @@ def parse_transactions_csv(content: bytes) -> pd.DataFrame:
     df["receiver_id"] = df["receiver_id"].astype(str).str.strip()
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
     
-    # Parse timestamp
+    # Parse timestamps and fill one-sided feeds without fabricating a different
+    # transaction time.
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    if "sent_at" not in df.columns:
+        df["sent_at"] = df["timestamp"]
+    if "received_at" not in df.columns:
+        df["received_at"] = df["timestamp"]
+    df["sent_at"] = df["sent_at"].fillna(df["timestamp"])
+    df["received_at"] = df["received_at"].fillna(df["sent_at"])
+    df["timestamp"] = df["timestamp"].fillna(df["received_at"]).fillna(df["sent_at"])
     if df["timestamp"].isna().any():
-        df["timestamp"] = df["timestamp"].fillna(pd.Timestamp.now())
+        raise ValueError("CSV contains rows without a valid transaction time")
+
+    df["status"] = df["status"].astype(str).str.strip().str.lower()
+    df["is_successful"] = df["status"].isin(
+        ["success", "succeeded", "completed", "complete", "settled", "true", "1", "yes", "y"]
+    )
+    df["transfer_latency_seconds"] = (
+        (df["received_at"] - df["sent_at"]).dt.total_seconds().clip(lower=0).fillna(0.0)
+    )
         
     # Sort chronologically
     df = df.sort_values("timestamp").reset_index(drop=True)

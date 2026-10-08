@@ -1,6 +1,4 @@
 "use client";
-
-import { useEffect, useState } from "react";
 import {
   PieChart,
   Pie,
@@ -8,10 +6,11 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { DashboardStats, fetchStats } from "@/lib/api";
+import { DashboardStats } from "@/lib/api";
 
 interface RiskDistributionProps {
   stats?: DashboardStats | null;
+  loading: boolean;
 }
 
 const COLORS = [
@@ -21,20 +20,7 @@ const COLORS = [
   "#ef4444", // Critical: red
 ];
 
-export default function RiskDistribution({ stats: externalStats }: RiskDistributionProps) {
-  const [stats, setStats] = useState<DashboardStats | null>(externalStats || null);
-  const [loading, setLoading] = useState(!externalStats);
-
-  useEffect(() => {
-    if (externalStats) {
-      setStats(externalStats);
-      return;
-    }
-    fetchStats()
-      .then((res) => setStats(res))
-      .catch((err) => console.error("Error fetching stats for risk distribution:", err))
-      .finally(() => setLoading(false));
-  }, [externalStats]);
+export default function RiskDistribution({ stats, loading }: RiskDistributionProps) {
 
   const total = stats?.total_accounts || 1;
   const low = stats?.low_risk_accounts || 0;

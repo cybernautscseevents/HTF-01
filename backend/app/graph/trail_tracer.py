@@ -24,6 +24,99 @@ class TrailTracer:
         if txn_matches.empty:
             return {"error": f"Transaction {transaction_id} not found", "trail": []}
 
+        return self._trace_connected_network(
+            str(transaction_id), txn_matches.iloc[0], txn_df, scores_dict
+        )
+
+    def _trace_connected_network(
+        self,
+        transaction_id: str,
+        seed_txn: pd.Series,
+        txn_df: pd.DataFrame,
+        scores_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Return every successful transaction in the seed's connected network."""
+        successful = txn_df[
+            txn_df["is_successful"] if "is_successful" in txn_df.columns else pd.Series(True, index=txn_df.index)
+        ].copy()
+        seed_sender = str(seed_txn["sender_id"])
+        seed_receiver = str(seed_txn["receiver_id"])
+        accounts: Set[str] = {seed_sender, seed_receiver}
+
+        changed = True
+        while changed:
+            changed = False
+            related = successful[
+                successful["sender_id"].astype(str).isin(accounts)
+                | successful["receiver_id"].astype(str).isin(accounts)
+            ]
+            discovered = set(related["sender_id"].astype(str)) | set(related["receiver_id"].astype(str))
+            if not discovered.issubset(accounts):
+                accounts.update(discovered)
+                changed = True
+
+        network = successful[
+            successful["sender_id"].astype(str).isin(accounts)
+            & successful["receiver_id"].astype(str).isin(accounts)
+        ].sort_values(["timestamp", "transaction_id"])
+
+        # Assign a stable path depth from the seed sender/receiver for display.
+        distances: Dict[str, int] = {seed_sender: 0, seed_receiver: 1}
+        for _, row in network.iterrows():
+            sender = str(row["sender_id"])
+            receiver = str(row["receiver_id"])
+            if sender in distances and receiver not in distances:
+                distances[receiver] = distances[sender] + 1
+            elif receiver in distances and sender not in distances:
+                distances[sender] = max(0, distances[receiver] - 1)
+
+        trail = []
+        for _, row in network.iterrows():
+            sender = str(row["sender_id"])
+            receiver = str(row["receiver_id"])
+            is_seed = str(row["transaction_id"]) == transaction_id
+            sent_at = row.get("sent_at", row["timestamp"])
+            received_at = row.get("received_at", row["timestamp"])
+            holding_seconds = max(
+                0,
+                int((received_at - sent_at).total_seconds())
+                if pd.notna(received_at) and pd.notna(sent_at)
+                else 0,
+            )
+            receiver_info = scores_dict.get(receiver, {})
+            classification = receiver_info.get("classification", "LOW")
+            trail.append({
+                "hop": distances.get(sender, 0),
+                "transaction_id": str(row["transaction_id"]),
+                "sender_id": sender,
+                "receiver_id": receiver,
+                "amount": float(row["amount"]),
+                "timestamp": row["timestamp"].isoformat(),
+                "holding_time_seconds": holding_seconds,
+                "channel": str(row.get("channel", "UPI")),
+                "receiver_risk_score": receiver_info.get("final_score", 0.0),
+                "receiver_classification": classification,
+                "receiver_is_mule": receiver_info.get("is_mule", False),
+                "action": "REPORTED_TRANSACTION" if is_seed else "NETWORK_TRANSFER",
+                "type": "Incoming" if sender not in accounts or distances.get(sender, 0) < distances.get(receiver, 1) else "Outgoing",
+                "note": "Victim transfer" if is_seed else (
+                    "Aggregated transfer" if sender in distances and receiver in distances else "Network transfer"
+                ),
+            })
+
+        ordered_accounts = sorted(
+            accounts,
+            key=lambda account: (distances.get(account, 999), account),
+        )
+        return {
+            "origin_transaction_id": transaction_id,
+            "network_id": None,
+            "total_hops": max((hop["hop"] for hop in trail), default=0),
+            "origin_amount": float(seed_txn["amount"]),
+            "ordered_accounts": ordered_accounts,
+            "trail": trail,
+        }
+ 
         seed_txn = txn_matches.iloc[0]
         seed_sender = str(seed_txn["sender_id"])
         seed_receiver = str(seed_txn["receiver_id"])
@@ -127,16 +220,17 @@ class TrailTracer:
         Traces downstream money trail starting from an account's earliest or largest outgoing transaction.
         """
         acc = str(account_id)
+        # A victim/account search starts with its earliest incoming transaction.
+        # This preserves the complete connected network instead of beginning
+        # halfway through the downstream chain.
+        in_txs = txn_df[txn_df["receiver_id"] == acc].sort_values("timestamp")
         out_txs = txn_df[txn_df["sender_id"] == acc].sort_values("timestamp")
-        if out_txs.empty:
-            # Check incoming transactions
-            in_txs = txn_df[txn_df["receiver_id"] == acc].sort_values("timestamp")
-            if in_txs.empty:
-                return {"error": f"Account {account_id} has no transaction history", "trail": []}
-            return self.trace_trail_from_transaction(str(in_txs.iloc[0]["transaction_id"]), txn_df, scores_dict, max_hops)
-
-        # Seed from first outgoing transaction
-        seed_tx_id = str(out_txs.iloc[0]["transaction_id"])
+        if not in_txs.empty:
+            seed_tx_id = str(in_txs.iloc[0]["transaction_id"])
+        elif not out_txs.empty:
+            seed_tx_id = str(out_txs.iloc[0]["transaction_id"])
+        else:
+            return {"error": f"Account {account_id} has no transaction history", "trail": []}
         return self.trace_trail_from_transaction(seed_tx_id, txn_df, scores_dict, max_hops)
 
     def rank_next_hops(

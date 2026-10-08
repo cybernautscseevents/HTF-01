@@ -38,6 +38,8 @@ class DataStore:
         self.scores_cache: Dict[str, Dict[str, Any]] = {}
         self.stats: Dict[str, Any] = {}
         self.network_cases: List[Dict[str, Any]] = []
+        self.transaction_case_index: Dict[str, Dict[str, str]] = {}
+        self.node_case_index: Dict[str, Dict[str, str]] = {}
         self.is_loaded: bool = False
 
     def process_and_load(
@@ -159,6 +161,20 @@ class DataStore:
 
             # 6. Detect connected transaction networks and score timing risk.
             self.network_cases = self._build_network_cases()
+            # A critically risky network must surface at least its highest-risk
+            # member as a mule for the dashboard and investigation workflow.
+            for case in self.network_cases:
+                if case["risk_score"] >= CRITICAL_THRESHOLD and case["member_accounts"]:
+                    mule_id = max(
+                        case["member_accounts"],
+                        key=lambda account_id: self.scores_cache.get(account_id, {}).get("final_score", 0.0),
+                    )
+                    mule = self.scores_cache.get(mule_id)
+                    if mule and mule["final_score"] < CRITICAL_THRESHOLD:
+                        mule["final_score"] = float(CRITICAL_THRESHOLD)
+                        mule["classification"] = "CRITICAL"
+                        mule["is_flagged"] = True
+                        mule["is_mule"] = True
 
             # 7. Global Stats Calculation
             total_accounts = len(self.scores_cache)
@@ -239,9 +255,9 @@ class DataStore:
             elif network_score >= HIGH_THRESHOLD:
                 status = "High"
             elif network_score >= MEDIUM_THRESHOLD:
-                status = "Investigating"
+                status = "Medium"
             else:
-                status = "Closed"
+                status = "Low"
 
             cases.append({
                 "network_id": network_id,
@@ -255,16 +271,66 @@ class DataStore:
                 "immediate_transaction_ratio": round(immediate_ratio, 4),
                 "risk_score": network_score,
                 "status": status,
-                "classification": status.upper() if status != "Investigating" else "MEDIUM",
+                "classification": status.upper(),
                 "role": self._network_role(member_ids),
+                "ordered_accounts": self._ordered_network_accounts(network_txns, member_ids),
+                "transaction_ids": [
+                    str(txn_id)
+                    for txn_id in network_txns.sort_values("timestamp")["transaction_id"].tolist()
+                ],
             })
 
         cases.sort(key=lambda case: case["risk_score"], reverse=True)
+        self.transaction_case_index = {}
+        self.node_case_index = {}
         for case in cases:
             for account_id in case["member_accounts"]:
                 if account_id in self.scores_cache:
                     self.scores_cache[account_id]["network_id"] = case["network_id"]
+                self.node_case_index[account_id] = {
+                    "case_id": case["case_id"],
+                    "network_id": case["network_id"],
+                }
+            for transaction_id in case["transaction_ids"]:
+                self.transaction_case_index[transaction_id] = {
+                    "case_id": case["case_id"],
+                    "network_id": case["network_id"],
+                }
         return cases
+
+    def _ordered_network_accounts(
+        self,
+        network_txns: pd.DataFrame,
+        member_ids: List[str],
+    ) -> List[str]:
+        """Persist accounts in a deterministic source-to-downstream order."""
+        senders = set(network_txns["sender_id"].astype(str))
+        receivers = set(network_txns["receiver_id"].astype(str))
+        sources = sorted(
+            senders - receivers,
+            key=lambda account: network_txns[
+                network_txns["sender_id"].astype(str) == account
+            ]["timestamp"].min(),
+        )
+        ordered: List[str] = []
+        queue = list(sources)
+        adjacency: Dict[str, List[str]] = {}
+        for _, row in network_txns.sort_values(["timestamp", "transaction_id"]).iterrows():
+            sender = str(row["sender_id"])
+            receiver = str(row["receiver_id"])
+            adjacency.setdefault(sender, [])
+            if receiver not in adjacency[sender]:
+                adjacency[sender].append(receiver)
+
+        while queue:
+            account = queue.pop(0)
+            if account in ordered:
+                continue
+            ordered.append(account)
+            queue.extend(adjacency.get(account, []))
+
+        ordered.extend(account for account in member_ids if account not in ordered)
+        return ordered
 
     def _network_role(self, member_ids: List[str]) -> str:
         """Describe the dominant topology role for a network."""
@@ -410,7 +476,66 @@ class DataStore:
         with self.lock:
             if not self.is_loaded or self.transactions_df.empty:
                 return {"error": "No transaction data loaded", "trail": []}
-            return self.trail_tracer.trace_trail_from_transaction(transaction_id, self.transactions_df, self.scores_cache)
+            transaction_key = str(transaction_id).strip()
+            result = self.trail_tracer.trace_trail_from_transaction(
+                transaction_key,
+                self.transactions_df,
+                self.scores_cache,
+            )
+            if "error" in result:
+                return result
+            case = next(
+                (
+                    item
+                    for item in self.network_cases
+                    if transaction_key in item.get("transaction_ids", [])
+                ),
+                None,
+            )
+            if case:
+                result["case_id"] = case["case_id"]
+                result["network_id"] = case["network_id"]
+                result["network_status"] = case["status"]
+                result["network_role"] = case["role"]
+                result["ordered_accounts"] = case.get("ordered_accounts", result.get("ordered_accounts", []))
+                result["transaction_ids"] = case.get("transaction_ids", [])
+            return result
+
+    def get_money_trail_case(self, case_id: str) -> Dict[str, Any]:
+        with self.lock:
+            if not self.is_loaded or self.transactions_df.empty:
+                return {"error": "No transaction data loaded", "trail": []}
+
+            case_key = str(case_id).strip().upper()
+            case = next(
+                (item for item in self.network_cases if item["case_id"].upper() == case_key),
+                None,
+            )
+            if not case:
+                return {"error": f"Case {case_id} not found", "trail": []}
+
+            transaction_ids = set(case.get("transaction_ids", []))
+            case_transactions = self.transactions_df[
+                self.transactions_df["transaction_id"].astype(str).isin(transaction_ids)
+            ].sort_values(["timestamp", "transaction_id"])
+            if case_transactions.empty:
+                return {"error": f"Case {case_id} has no transaction records", "trail": []}
+
+            seed_id = str(case_transactions.iloc[0]["transaction_id"])
+            result = self.trail_tracer.trace_trail_from_transaction(
+                seed_id,
+                self.transactions_df,
+                self.scores_cache,
+            )
+            if "error" in result:
+                return result
+            result["case_id"] = case["case_id"]
+            result["network_id"] = case["network_id"]
+            result["network_status"] = case["status"]
+            result["network_role"] = case["role"]
+            result["ordered_accounts"] = case.get("ordered_accounts", [])
+            result["transaction_ids"] = case.get("transaction_ids", [])
+            return result
 
     def get_money_trail_acc(self, account_id: str) -> Dict[str, Any]:
         with self.lock:

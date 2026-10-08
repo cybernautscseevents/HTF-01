@@ -6,39 +6,79 @@ import {
   ArrowLeftRight,
   Network,
   ShieldAlert,
-  Coins,
   RefreshCw,
 } from "lucide-react";
 
 import AppShell from "@/components/layout/AppShell";
-import CsvUploader, { CsvRow } from "@/components/dashboard/CsvUploader";
+import CsvUploader, { CsvProcessingResult } from "@/components/dashboard/CsvUploader";
 import StatCard from "@/components/dashboard/StatCard";
 import ActivityChart from "@/components/dashboard/ActivityChart";
 import RiskDistribution from "@/components/dashboard/RiskDistribution";
 import RecentCases from "@/components/dashboard/RecentCases";
 import TopAccounts from "@/components/dashboard/TopAccounts";
-import { DashboardStats, fetchStats } from "@/lib/api";
+import {
+  AccountSummary,
+  ActivityTrendPoint,
+  DashboardStats,
+  NetworkCase,
+  fetchDashboardSnapshot,
+} from "@/lib/api";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [activity, setActivity] = useState<ActivityTrendPoint[]>([]);
+  const [topAccounts, setTopAccounts] = useState<AccountSummary[]>([]);
+  const [networkCases, setNetworkCases] = useState<NetworkCase[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hasAnalysis, setHasAnalysis] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    // The backend keeps the analyzed dataset in its store while the app runs.
+    // Rehydrate this page whenever navigation remounts the dashboard.
+    loadData();
+  }, []);
 
   const loadData = () => {
     setLoading(true);
-    fetchStats()
-      .then((data) => setStats(data))
-      .catch((err) => console.error("Error loading dashboard stats:", err))
+    fetchDashboardSnapshot()
+      .then((data) => {
+        setStats(data.stats);
+        setActivity(data.activity);
+        setTopAccounts(data.top_accounts);
+        setNetworkCases(data.network_cases);
+        setHasAnalysis(true);
+      })
+      .catch((err) => console.error("Error loading processed dashboard data:", err))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => {
+  const handleDataLoaded = (result: CsvProcessingResult) => {
+    // The upload response is returned only after backend parsing, ML inference,
+    // and rule scoring. Fetch the complete dashboard snapshot after that point.
+    setStats(result.stats);
+    setActivity([]);
+    setTopAccounts([]);
+    setNetworkCases([]);
+    setHasAnalysis(false);
     loadData();
-  }, [refreshKey]);
+  };
 
-  const handleDataLoaded = (_data: CsvRow[], _fileName: string) => {
-    // Re-fetch stats after CSV ingestion completes
+  const handleProcessingChange = (isProcessing: boolean) => {
+    setLoading(isProcessing);
+    if (isProcessing) {
+      setHasAnalysis(false);
+      setStats(null);
+      setActivity([]);
+      setTopAccounts([]);
+      setNetworkCases([]);
+    }
+  };
+
+  const handleRefresh = () => {
+    if (!hasAnalysis) return;
     setRefreshKey((k) => k + 1);
+    loadData();
   };
 
   return (
@@ -55,35 +95,44 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <button
-            onClick={() => setRefreshKey((k) => k + 1)}
+          {hasAnalysis && (
+            <button
+            onClick={handleRefresh}
             className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-600 hover:text-white"
-          >
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-            Sync Dashboard
-          </button>
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              Sync Dashboard
+            </button>
+          )}
         </div>
 
         {/* CSV Upload & Demo Feed Ingestion */}
-        <CsvUploader onDataLoaded={handleDataLoaded} />
+        <CsvUploader
+          onDataLoaded={handleDataLoaded}
+          onProcessingChange={handleProcessingChange}
+        />
 
+        {hasAnalysis && (
+          <>
         {/* Live Real Statistics Grid */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             title="Total Accounts"
-            value={stats ? stats.total_accounts.toLocaleString() : "96"}
-            change={`${stats?.gst_merchants || 4} GST Verified`}
+            value={stats ? stats.total_accounts.toLocaleString() : "—"}
+            change={stats ? `${stats.gst_merchants} GST Verified` : "Waiting for analysis"}
             positive={true}
             icon={Users}
           />
 
           <StatCard
             title="Total Transactions"
-            value={stats ? stats.total_transactions.toLocaleString() : "683"}
+            value={stats ? stats.total_transactions.toLocaleString() : "—"}
             change={
               stats?.total_volume
                 ? `₹${(stats.total_volume / 100000).toFixed(1)}L Vol`
-                : "Active"
+                : stats
+                ? "Active"
+                : "Waiting for analysis"
             }
             positive={true}
             icon={ArrowLeftRight}
@@ -91,7 +140,7 @@ export default function DashboardPage() {
 
           <StatCard
             title="Critical Risk Mules"
-            value={stats ? stats.critical_accounts.toString() : "5"}
+            value={stats ? stats.critical_accounts.toString() : "—"}
             change="Immediate Freeze"
             positive={false}
             icon={ShieldAlert}
@@ -99,7 +148,7 @@ export default function DashboardPage() {
 
           <StatCard
             title="Flagged Conduit Accounts"
-            value={stats ? stats.flagged_accounts.toString() : "13"}
+            value={stats ? stats.flagged_accounts.toString() : "—"}
             change="AML Queue"
             positive={false}
             icon={Network}
@@ -108,15 +157,17 @@ export default function DashboardPage() {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">
-          <ActivityChart key={`act-${refreshKey}`} />
-          <RiskDistribution stats={stats} key={`dist-${refreshKey}`} />
+          <ActivityChart data={activity} loading={loading} key={`act-${refreshKey}`} />
+          <RiskDistribution stats={stats} loading={loading} key={`dist-${refreshKey}`} />
         </div>
 
         {/* Tables Section */}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">
-          <RecentCases key={`cases-${refreshKey}`} />
-          <TopAccounts key={`top-${refreshKey}`} />
+          <RecentCases cases={networkCases} loading={loading} key={`cases-${refreshKey}`} />
+          <TopAccounts cases={networkCases} loading={loading} key={`top-${refreshKey}`} />
         </div>
+          </>
+        )}
       </div>
     </AppShell>
   );

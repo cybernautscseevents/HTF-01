@@ -10,11 +10,39 @@ export interface DashboardStats {
   low_risk_accounts: number;
   flagged_accounts: number;
   gst_merchants: number;
+  transaction_networks: number;
+  immediate_transactions: number;
   alpha_weight: number;
+}
+
+export interface NetworkCase {
+  network_id: string;
+  case_id: string;
+  reported_date: string;
+  amount: number;
+  people_involved: number;
+  member_accounts: string[];
+  transaction_count: number;
+  immediate_transaction_count: number;
+  immediate_transaction_ratio: number;
+  risk_score: number;
+  status: "Critical" | "High" | "Medium" | "Low";
+  classification: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  role: string;
+  ordered_accounts?: string[];
+  transaction_ids?: string[];
+}
+
+export interface DashboardSnapshot {
+  stats: DashboardStats;
+  activity: ActivityTrendPoint[];
+  top_accounts: AccountSummary[];
+  network_cases: NetworkCase[];
 }
 
 export interface AccountSummary {
   account_id: string;
+  network_id?: string;
   final_score: number;
   rule_score: number;
   ml_score: number;
@@ -120,6 +148,8 @@ export interface TrailHop {
   receiver_classification: string;
   receiver_is_mule: boolean;
   action: string;
+  type?: "Incoming" | "Outgoing";
+  note?: string;
 }
 
 export interface MoneyTrailData {
@@ -127,11 +157,23 @@ export interface MoneyTrailData {
   total_hops: number;
   origin_amount: number;
   trail: TrailHop[];
+  ordered_accounts?: string[];
+  network_id?: string;
+  case_id?: string;
+  network_status?: "Critical" | "High" | "Medium" | "Low";
+  network_role?: string;
+  transaction_ids?: string[];
 }
 
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch(`${API_BASE_URL}/stats`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch dashboard stats");
+  return res.json();
+}
+
+export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
+  const res = await fetch(`${API_BASE_URL}/dashboard`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch dashboard data");
   return res.json();
 }
 
@@ -193,19 +235,25 @@ export async function fetchActivityTrend(): Promise<ActivityTrendPoint[]> {
   }
 }
 
-export async function fetchMoneyTrail(id: string): Promise<MoneyTrailData> {
-  // Try transaction trail first, then account trail
-  const txnUrl = `${API_BASE_URL}/transactions/${encodeURIComponent(id)}/trail`;
-  const res = await fetch(txnUrl, { cache: "no-store" });
+export async function fetchMoneyTrail(transactionId: string): Promise<MoneyTrailData> {
+  const url = `${API_BASE_URL}/transactions/${encodeURIComponent(transactionId)}/trail`;
+  const res = await fetch(url, { cache: "no-store" });
   if (res.ok) return res.json();
 
-  const accUrl = `${API_BASE_URL}/accounts/${encodeURIComponent(id)}/trail`;
-  const resAcc = await fetch(accUrl, { cache: "no-store" });
-  if (!resAcc.ok) throw new Error(`Failed to trace money trail for ${id}`);
-  return resAcc.json();
+  const caseUrl = `${API_BASE_URL}/cases/${encodeURIComponent(transactionId)}/trail`;
+  const caseRes = await fetch(caseUrl, { cache: "no-store" });
+  if (!caseRes.ok) throw new Error(`Transaction or case ${transactionId} was not found`);
+  return caseRes.json();
 }
 
-export async function uploadTransactionsCsv(file: File, accountsFile?: File): Promise<any> {
+export interface UploadResponse {
+  status: "success";
+  message: string;
+  stats: DashboardStats;
+  network_cases: NetworkCase[];
+}
+
+export async function uploadTransactionsCsv(file: File, accountsFile?: File): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("transactions_file", file);
   if (accountsFile) {
@@ -223,7 +271,7 @@ export async function uploadTransactionsCsv(file: File, accountsFile?: File): Pr
   return res.json();
 }
 
-export async function loadDemoDataset(): Promise<any> {
+export async function loadDemoDataset(): Promise<UploadResponse> {
   const res = await fetch(`${API_BASE_URL}/demo/load`, {
     method: "POST",
   });

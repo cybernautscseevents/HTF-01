@@ -168,6 +168,20 @@ def get_transaction_money_trail(transaction_id: str):
     return trail_res
 
 
+@router.get("/cases/{case_id}/trail")
+def get_case_money_trail(case_id: str):
+    """
+    Returns the complete ordered transaction network stored for a case ID.
+    """
+    if not store.is_loaded:
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before requesting case trails.")
+
+    trail_res = store.get_money_trail_case(case_id)
+    if "error" in trail_res:
+        raise HTTPException(status_code=404, detail=trail_res["error"])
+    return trail_res
+
+
 @router.get("/accounts/{account_id}/trail")
 def get_account_money_trail(account_id: str):
     """

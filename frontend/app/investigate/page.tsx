@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Building2,
   GitFork,
@@ -18,14 +18,43 @@ import AppShell from "@/components/layout/AppShell";
 import NetworkGraph from "@/components/investigation/NetworkGraph";
 import AccountPanel from "@/components/investigation/AccountPanel";
 import MoneyTrail from "@/components/timeline/MoneyTrail";
-import { loadDemoDataset } from "@/lib/api";
+import { AccountSummary, fetchAccounts, loadDemoDataset } from "@/lib/api";
+
+interface Scenario {
+  icon: string;
+  label: string;
+  accountId: string;
+  tone: "red" | "orange" | "blue" | "green";
+}
 
 export default function InvestigatePage() {
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("MULE_RAPID_047");
-  const [inputAccount, setInputAccount] = useState("MULE_RAPID_047");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [inputAccount, setInputAccount] = useState("");
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [showTrail, setShowTrail] = useState(true);
   const [loadingDemo, setLoadingDemo] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    fetchAccounts({ limit: 500 })
+      .then(({ accounts }) => {
+        const find = (predicate: (account: AccountSummary) => boolean) =>
+          accounts.find(predicate) || accounts[0];
+        const next: Array<Omit<Scenario, "accountId"> & { accountId?: string }> = [
+          { icon: "🚨", label: "Rapid Drain Mule", accountId: find((a) => a.forwarding_ratio >= 0.8)?.account_id, tone: "red" as const },
+          { icon: "🌪️", label: "Fan-In Aggregator", accountId: find((a) => a.unique_senders > a.unique_receivers && a.unique_senders >= 3)?.account_id, tone: "orange" as const },
+          { icon: "🔄", label: "Circular Loop", accountId: find((a) => a.cycle_count > 0)?.account_id, tone: "orange" as const },
+          { icon: "✅", label: "GST Merchant Credit", accountId: find((a) => a.is_gst_registered)?.account_id, tone: "green" as const },
+        ];
+        const available = next.filter((scenario): scenario is Scenario => Boolean(scenario.accountId));
+        setScenarios(available);
+        if (available[0]) {
+          setSelectedAccountId((current) => current || available[0].accountId);
+          setInputAccount((current) => current || available[0].accountId);
+        }
+      })
+      .catch(() => setScenarios([]));
+  }, [refreshKey]);
 
   const handleSelectAccount = (id: string) => {
     setSelectedAccountId(id);
@@ -92,50 +121,23 @@ export default function InvestigatePage() {
         {/* Quick Scenario Preset Selector */}
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-[#071019] p-3 text-xs">
           <span className="font-semibold text-slate-400 text-[11px] pr-2">Quick Scenarios:</span>
-          
-          <button
-            onClick={() => handleSelectAccount("MULE_RAPID_047")}
-            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-              selectedAccountId === "MULE_RAPID_047"
-                ? "bg-red-500/20 text-red-300 border border-red-500/50"
-                : "border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white"
-            }`}
-          >
-            🚨 MULE_RAPID_047 (Rapid Drain Mule)
-          </button>
-
-          <button
-            onClick={() => handleSelectAccount("MULE_FUNNEL_103")}
-            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-              selectedAccountId === "MULE_FUNNEL_103"
-                ? "bg-red-500/20 text-red-300 border border-red-500/50"
-                : "border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white"
-            }`}
-          >
-            🌪️ MULE_FUNNEL_103 (Fan-In Aggregator)
-          </button>
-
-          <button
-            onClick={() => handleSelectAccount("MULE_CYCLE_X_301")}
-            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-              selectedAccountId === "MULE_CYCLE_X_301"
-                ? "bg-orange-500/20 text-orange-300 border border-orange-500/50"
-                : "border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white"
-            }`}
-          >
-            🔄 MULE_CYCLE_X_301 (Circular Loop)
-          </button>
-
-          <button
-            onClick={() => handleSelectAccount("MERCHANT_SUPERMART_01")}
-            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-              selectedAccountId === "MERCHANT_SUPERMART_01"
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50"
-                : "border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white"
-            }`}
-          >
-            ✅ MERCHANT_SUPERMART_01 (GST Merchant Credit)
-          </button>
+          {scenarios.length === 0 ? (
+            <span className="text-[11px] text-slate-500">Upload a CSV on the dashboard to generate scenarios.</span>
+          ) : scenarios.map((scenario) => (
+            <button
+              key={`${scenario.label}-${scenario.accountId}`}
+              onClick={() => handleSelectAccount(scenario.accountId)}
+              className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                selectedAccountId === scenario.accountId
+                  ? scenario.tone === "green"
+                    ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
+                    : "border-red-500/50 bg-red-500/20 text-red-300"
+                  : "border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white"
+              }`}
+            >
+              {scenario.icon} {scenario.accountId} ({scenario.label})
+            </button>
+          ))}
         </div>
 
         {/* Central Investigation Workspace: Graph (Left) + Account Panel (Right) */}
@@ -162,7 +164,7 @@ export default function InvestigatePage() {
         {/* Bottom Section: Reconstructed Money Trail Timeline */}
         {showTrail && (
           <div className="pt-2">
-            <MoneyTrail seedId={selectedAccountId} />
+            <MoneyTrail />
           </div>
         )}
       </div>

@@ -78,6 +78,9 @@ TRANSACTION_COLUMN_MAP = {
     "state": "status",
     "transfer_status": "status",
     "transfer_success": "status",
+    "gst": "is_gst_registered",
+    "gst_registered": "is_gst_registered",
+    "is_gst_registered": "is_gst_registered",
 }
 
 ACCOUNT_COLUMN_MAP = {
@@ -151,7 +154,7 @@ def parse_transactions_csv(content: bytes) -> pd.DataFrame:
         
     # Optional columns defaults
     if "amount" not in df.columns:
-        df["amount"] = 0.0
+        raise ValueError("CSV must contain the transferred amount column")
     if "channel" not in df.columns:
         df["channel"] = "UPI"
     if "transaction_type" not in df.columns:
@@ -185,6 +188,11 @@ def parse_transactions_csv(content: bytes) -> pd.DataFrame:
     df["transfer_latency_seconds"] = (
         (df["received_at"] - df["sent_at"]).dt.total_seconds().clip(lower=0).fillna(0.0)
     )
+    if "is_gst_registered" in df.columns:
+        df["is_gst_registered"] = (
+            df["is_gst_registered"].astype(str).str.strip().str.lower()
+            .isin(["true", "1", "yes", "y"])
+        )
         
     # Sort chronologically
     df = df.sort_values("timestamp").reset_index(drop=True)
@@ -252,11 +260,19 @@ def synthesize_accounts_from_transactions(txn_df: pd.DataFrame) -> pd.DataFrame:
         acc_str = str(acc)
         is_merchant = "MERCHANT" in acc_str.upper() or "STORE" in acc_str.upper() or "BIZ" in acc_str.upper()
         
+        gst_in_feed = False
+        if "is_gst_registered" in txn_df.columns:
+            gst_in_feed = bool(
+                txn_df.loc[
+                    (txn_df["sender_id"] == acc) | (txn_df["receiver_id"] == acc),
+                    "is_gst_registered",
+                ].any()
+            )
         rows.append({
             "account_id": acc,
             "account_type": "merchant" if is_merchant else "individual",
-            "is_gst_registered": is_merchant,
-            "gst_active": is_merchant,
+            "is_gst_registered": is_merchant or gst_in_feed,
+            "gst_active": is_merchant or gst_in_feed,
             "account_age_days": 365.0 if is_merchant else 180.0,
             "kyc_status": "VERIFIED",
             "business_category": "Retail & Trade" if is_merchant else "Personal"

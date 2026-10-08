@@ -1,197 +1,253 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowRight,
-  ArrowUpRight,
+  Bell,
   CircleDollarSign,
-  Clock,
-  ShieldAlert,
+  LoaderCircle,
+  Search,
+  SlidersHorizontal,
+  UserRound,
 } from "lucide-react";
-import { MoneyTrailData, TrailHop, fetchMoneyTrail } from "@/lib/api";
+import { MoneyTrailData, fetchMoneyTrail } from "@/lib/api";
 
 interface MoneyTrailProps {
-  seedId?: string;
   trailData?: MoneyTrailData | null;
 }
 
-export default function MoneyTrail({ seedId = "MULE_RAPID_047", trailData: externalTrail }: MoneyTrailProps) {
+type NodeRole = "Victim" | "Aggregator" | "Relay" | "Mule" | "Cash-out";
+
+const money = (value: number) => `₹${value.toLocaleString("en-IN")}`;
+
+function roleFor(index: number, total: number): NodeRole {
+  if (index === 0) return "Victim";
+  if (index === 1) return "Aggregator";
+  if (index === 2 && total > 4) return "Relay";
+  if (index === total - 1) return "Cash-out";
+  return "Mule";
+}
+
+function nodeTone(role: NodeRole) {
+  if (role === "Victim") return "border-sky-400 bg-sky-500 text-sky-100";
+  if (role === "Aggregator") return "border-red-400 bg-red-500 text-white";
+  if (role === "Relay") return "border-orange-400 bg-orange-500 text-white";
+  if (role === "Mule") return "border-amber-300 bg-amber-500 text-white";
+  return "border-violet-400 bg-violet-600 text-white";
+}
+
+export default function MoneyTrail({ trailData: externalTrail }: MoneyTrailProps) {
+  const [query, setQuery] = useState("");
   const [data, setData] = useState<MoneyTrailData | null>(externalTrail || null);
+  const [selectedAccount, setSelectedAccount] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (externalTrail) {
-      setData(externalTrail);
-      return;
+  const search = async (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await fetchMoneyTrail(trimmed);
+      setData(result);
+      setSelectedAccount(result.ordered_accounts?.[1] || "");
+    } catch {
+      setData(null);
+      setError(`No transaction network found for "${trimmed}".`);
+    } finally {
+      setLoading(false);
     }
-    if (seedId) {
-      setLoading(true);
-      fetchMoneyTrail(seedId)
-        .then((res) => setData(res))
-        .catch((err) => console.error("Error loading money trail:", err))
-        .finally(() => setLoading(false));
-    }
-  }, [seedId, externalTrail]);
+  };
 
-  const trailHops = data?.trail || [];
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void search(query);
+  };
+
+  const trail = data?.trail || [];
+  const accounts = data?.ordered_accounts || [];
+  const selectedIndex = Math.max(0, accounts.indexOf(selectedAccount));
+  const selectedRole = roleFor(selectedIndex, accounts.length);
+
+  const selectedTransactions = useMemo(
+    () => trail.filter((item) => item.sender_id === selectedAccount || item.receiver_id === selectedAccount),
+    [selectedAccount, trail],
+  );
+  const incoming = selectedTransactions.filter((item) => item.receiver_id === selectedAccount);
+  const outgoing = selectedTransactions.filter((item) => item.sender_id === selectedAccount);
+  const received = incoming.reduce((sum, item) => sum + item.amount, 0);
+  const forwarded = outgoing.reduce((sum, item) => sum + item.amount, 0);
+  const risk = trail.find((item) => item.receiver_id === selectedAccount)?.receiver_risk_score || 0;
+  const classification = trail.find((item) => item.receiver_id === selectedAccount)?.receiver_classification || "LOW";
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#071019] shadow-2xl">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-        <div className="flex items-center gap-2.5">
-          <CircleDollarSign size={20} className="text-blue-400" />
+    <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#050d16] shadow-2xl">
+      <header className="border-b border-slate-800 px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-semibold text-white">
-              Downstream Money Trail Propagation
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-400">
-              Chronological hop-by-hop tracking of fund dissipation and intermediary mules
-            </p>
+            <h2 className="text-lg font-semibold text-white">Network Investigation</h2>
+            <p className="text-xs text-slate-400">Explore the money trail and connections</p>
           </div>
-        </div>
-        {data && (
-          <div className="flex items-center gap-3 text-xs">
-            <span className="rounded bg-slate-800 px-2.5 py-1 font-mono text-slate-300">
-              Total Hops: {data.total_hops}
-            </span>
-            <span className="rounded bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 font-mono font-bold text-blue-400">
-              Initial Amount: ₹{data.origin_amount?.toLocaleString()}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {loading && (
-        <div className="p-8 text-center text-xs text-slate-400">
-          Tracing downstream fund movements...
-        </div>
-      )}
-
-      {!loading && trailHops.length === 0 && (
-        <div className="p-8 text-center text-xs text-slate-500">
-          No downstream forwarding trail found for this transaction/account.
-        </div>
-      )}
-
-      {/* Visual Flow Pipeline */}
-      {!loading && trailHops.length > 0 && (
-        <div className="border-b border-slate-800 p-5">
-          <div className="overflow-x-auto pb-4">
-            <div className="flex min-w-max items-center justify-start gap-3 py-3">
-              {trailHops.map((hop, index) => {
-                const isOrigin = hop.hop === 0;
-                const isCrit = hop.receiver_classification === "CRITICAL";
-                return (
-                  <div key={hop.transaction_id + index} className="flex items-center">
-                    <div
-                      className={`min-w-[140px] rounded-xl border p-3 text-center transition shadow-lg ${
-                        isOrigin
-                          ? "border-blue-500/60 bg-blue-500/10 text-blue-300"
-                          : isCrit
-                          ? "border-red-500/60 bg-red-500/10 text-red-300"
-                          : "border-orange-500/60 bg-orange-500/10 text-orange-300"
-                      }`}
-                    >
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        {isOrigin ? "Origin Source" : `Hop #${hop.hop}`}
-                      </div>
-                      <div className="mt-1 font-mono text-sm font-bold text-white">
-                        {hop.receiver_id}
-                      </div>
-                      <div className="mt-1 text-xs font-semibold text-emerald-400">
-                        ₹{hop.amount.toLocaleString()}
-                      </div>
-                      <div className="mt-2 flex items-center justify-center gap-1 text-[10px] text-slate-400">
-                        <Clock size={10} />
-                        <span>
-                          {hop.holding_time_seconds > 0
-                            ? `${hop.holding_time_seconds}s hold`
-                            : "Direct"}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[9px] font-bold uppercase">
-                        {hop.receiver_classification} ({hop.receiver_risk_score} pts)
-                      </div>
-                    </div>
-
-                    {index < trailHops.length - 1 && (
-                      <div className="flex flex-col items-center mx-2 text-slate-500">
-                        <ArrowRight size={20} className="text-slate-500" />
-                        <span className="text-[9px] font-mono text-slate-400">
-                          {hop.channel}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+          <div className="hidden items-center gap-3 text-slate-400 sm:flex">
+            <Bell size={16} />
+            <div className="flex items-center gap-2 text-xs">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-600 text-white">
+                <UserRound size={13} />
+              </span>
+              Analyst
             </div>
           </div>
         </div>
+
+        <form onSubmit={submit} className="mt-3 flex flex-wrap gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-2.5 text-slate-500" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Case ID or transaction ID"
+              className="w-full rounded-md border border-slate-700 bg-[#0b1621] py-2 pl-9 pr-3 text-xs text-white outline-none placeholder:text-slate-500 focus:border-blue-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading || !query.trim()}
+            className="rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? <LoaderCircle size={15} className="animate-spin" /> : "Load Network"}
+          </button>
+          <button type="button" className="flex items-center gap-1 rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300">
+            Layout: Hierarchical <ArrowDownRight size={13} />
+          </button>
+          <button type="button" className="flex items-center gap-1 rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300">
+            <SlidersHorizontal size={13} /> Filters
+          </button>
+        </form>
+        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+      </header>
+
+      {!data && !loading && (
+        <div className="p-12 text-center text-xs text-slate-500">
+          Enter a case ID or transaction ID to load the transaction network.
+        </div>
       )}
 
-      {/* Transaction Details Table */}
-      {!loading && trailHops.length > 0 && (
-        <div className="p-5">
-          <div className="mb-3">
-            <h3 className="text-sm font-semibold text-slate-200">
-              Reconstructed Evidence Trail
-            </h3>
-            <p className="text-xs text-slate-500">
-              Sequential transaction records verifying the chain of custody
-            </p>
-          </div>
+      {loading && (
+        <div className="flex items-center justify-center gap-2 p-12 text-xs text-slate-400">
+          <LoaderCircle size={16} className="animate-spin text-blue-400" />
+          Loading stored network...
+        </div>
+      )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400">
-                  <th className="px-3 py-2.5 font-medium">Hop</th>
-                  <th className="px-3 py-2.5 font-medium">Timestamp</th>
-                  <th className="px-3 py-2.5 font-medium">Sender</th>
-                  <th className="px-3 py-2.5 font-medium">Receiver</th>
-                  <th className="px-3 py-2.5 font-medium">Amount</th>
-                  <th className="px-3 py-2.5 font-medium">Holding Time</th>
-                  <th className="px-3 py-2.5 font-medium">Receiver Risk</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-900">
-                {trailHops.map((hop) => (
-                  <tr key={hop.transaction_id} className="hover:bg-slate-900/50">
-                    <td className="px-3 py-2.5 font-mono text-slate-400">#{hop.hop}</td>
-                    <td className="px-3 py-2.5 font-mono text-slate-400">
-                      {new Date(hop.timestamp).toLocaleTimeString()}
-                    </td>
-                    <td className="px-3 py-2.5 font-mono font-medium text-slate-200">
-                      {hop.sender_id}
-                    </td>
-                    <td className="px-3 py-2.5 font-mono font-semibold text-white">
-                      {hop.receiver_id}
-                    </td>
-                    <td className="px-3 py-2.5 font-mono font-bold text-emerald-400">
-                      ₹{hop.amount.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-300">
-                      {hop.holding_time_seconds > 0 ? `${hop.holding_time_seconds} seconds` : "Immediate"}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
-                          hop.receiver_classification === "CRITICAL"
-                            ? "bg-red-500/10 text-red-400 border border-red-500/30"
-                            : "bg-orange-500/10 text-orange-400 border border-orange-500/30"
+      {data && !loading && (
+        <div className="grid min-h-[510px] lg:grid-cols-[minmax(0,1fr)_285px]">
+          <div className="relative border-r border-slate-800 bg-[radial-gradient(circle_at_50%_45%,rgba(21,57,78,.22),transparent_55%)] p-4">
+            <div className="absolute left-4 top-4 z-10 space-y-2 rounded-lg bg-slate-950/80 p-2 text-[10px] text-slate-300">
+              {[
+                ["bg-sky-500", "Victim"],
+                ["bg-cyan-400", "Normal Account"],
+                ["bg-red-500", "Suspicious Account"],
+                ["bg-amber-500", "Mule Account"],
+                ["bg-violet-500", "Cash-out / Exit"],
+              ].map(([color, label]) => (
+                <div key={label} className="flex items-center gap-2">
+                  <span className={`h-3 w-3 rounded-full ${color}`} /> {label}
+                </div>
+              ))}
+              <div className="mt-1 flex items-center gap-2 border-t border-slate-800 pt-1">
+                <ArrowRight size={14} /> Money Flow
+              </div>
+              <div className="flex items-center gap-2 text-red-400">
+                <ArrowRight size={14} /> Suspicious Flow
+              </div>
+            </div>
+
+            <div className="flex min-h-[465px] items-center justify-center overflow-x-auto pt-16">
+              <div className="flex min-w-max items-center gap-2">
+                {accounts.map((account, index) => {
+                  const role = roleFor(index, accounts.length);
+                  const accountIncoming = trail.filter((item) => item.receiver_id === account);
+                  const accountOutgoing = trail.filter((item) => item.sender_id === account);
+                  const suspicious = accountOutgoing.some((item) => item.receiver_classification === "HIGH" || item.receiver_classification === "CRITICAL");
+                  return (
+                    <div key={account} className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAccount(account)}
+                        className={`group flex w-[72px] flex-col items-center rounded-lg p-1 transition hover:bg-white/5 ${
+                          selectedAccount === account ? "ring-1 ring-blue-400" : ""
                         }`}
                       >
-                        {hop.receiver_risk_score} pts ({hop.receiver_classification})
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        <span className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-bold shadow-lg ${nodeTone(role)}`}>
+                          {role === "Cash-out" ? "F" : account.slice(-1)}
+                        </span>
+                        <span className="mt-1 max-w-[72px] truncate text-xs font-semibold text-white">{account}</span>
+                        <span className="text-[10px] text-slate-400">({role})</span>
+                        {(accountIncoming.length || accountOutgoing.length) > 0 && (
+                          <span className="mt-1 text-[9px] text-slate-500">
+                            {accountIncoming.length + accountOutgoing.length} txns
+                          </span>
+                        )}
+                      </button>
+                      {index < accounts.length - 1 && (
+                        <div className={`relative mx-1 flex w-12 items-center ${suspicious ? "text-red-400" : "text-slate-400"}`}>
+                          <div className={`h-px w-full ${suspicious ? "bg-red-500" : "bg-slate-500"}`} />
+                          <ArrowRight size={14} className="absolute right-0" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="absolute bottom-4 left-4 flex gap-1">
+              <button type="button" className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">+</button>
+              <button type="button" className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">−</button>
+              <button type="button" className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">⌘</button>
+            </div>
           </div>
+
+          <aside className="bg-[#091521] p-4">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="font-semibold text-white">{selectedAccount || "Select an account"}</h3>
+                <p className="mt-1 text-[11px] text-slate-400">Account ID {selectedAccount || "—"}</p>
+              </div>
+              <span className={`rounded px-2 py-1 text-[10px] font-bold ${
+                classification === "CRITICAL" || classification === "HIGH"
+                  ? "bg-red-500 text-white"
+                  : "bg-amber-500 text-black"
+              }`}>
+                {classification === "LOW" ? "Normal" : `${classification} Risk`}
+              </span>
+            </div>
+
+            <div className="space-y-3 py-4 text-xs">
+              <div className="flex justify-between text-slate-400"><span>Risk Score</span><strong className="text-white">{Math.round(risk)} / 100</strong></div>
+              <div className="h-2 rounded-full bg-slate-800"><div className="h-2 rounded-full bg-red-500" style={{ width: `${Math.min(100, risk)}%` }} /></div>
+              <div className="flex justify-between text-slate-400"><span>Role</span><strong className="text-right text-slate-200">{selectedRole} {classification === "HIGH" ? "(Possible Mule)" : ""}</strong></div>
+            </div>
+
+            <div className="grid grid-cols-2 border-b border-slate-800 text-[11px]">
+              <div className="border-b-2 border-blue-500 bg-blue-500/10 px-2 py-2 text-center text-blue-300">Key Metrics</div>
+              <div className="px-2 py-2 text-center text-slate-400">Recent Transactions</div>
+            </div>
+            <div className="space-y-3 py-4 text-xs">
+              <div className="flex justify-between text-slate-400"><span>Incoming txns</span><b className="text-slate-200">{incoming.length}</b></div>
+              <div className="flex justify-between text-slate-400"><span>Outgoing txns</span><b className="text-slate-200">{outgoing.length}</b></div>
+              <div className="flex justify-between text-slate-400"><span>Total received</span><b className="text-slate-200">{money(received)}</b></div>
+              <div className="flex justify-between text-slate-400"><span>Total forwarded</span><b className="text-slate-200">{money(forwarded)} ({received ? Math.round((forwarded / received) * 100) : 0}%)</b></div>
+              <div className="flex justify-between text-slate-400"><span>Unique senders</span><b className="text-slate-200">{new Set(incoming.map((item) => item.sender_id)).size}</b></div>
+              <div className="flex justify-between text-slate-400"><span>Unique receivers</span><b className="text-slate-200">{new Set(outgoing.map((item) => item.receiver_id)).size}</b></div>
+              <div className="flex justify-between text-slate-400"><span>Median hold time</span><b className="text-slate-200">{selectedTransactions.length ? Math.round(selectedTransactions.reduce((sum, item) => sum + item.holding_time_seconds, 0) / selectedTransactions.length) : 0} seconds</b></div>
+            </div>
+            <button type="button" className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-500">
+              View Full Details <ArrowRight size={14} />
+            </button>
+          </aside>
         </div>
       )}
     </section>

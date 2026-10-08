@@ -116,6 +116,8 @@ class GraphEngine:
         account_last_time: Dict[str, Any] = {}
 
         for _, row in sorted_txns.iterrows():
+            if "is_successful" in row and not bool(row["is_successful"]):
+                continue
             sender = str(row["sender_id"])
             receiver = str(row["receiver_id"])
             ts = row["timestamp"]

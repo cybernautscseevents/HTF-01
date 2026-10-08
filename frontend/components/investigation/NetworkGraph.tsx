@@ -55,12 +55,19 @@ export default function NetworkGraph({
 
     activeData.nodes.forEach((node) => {
       let nodeType = "low";
+      let marker = "●";
       if (node.is_gst_registered) {
         nodeType = "merchant";
+        marker = "✓";
       } else if (node.classification === "CRITICAL") {
         nodeType = "critical";
+        marker = "!";
       } else if (node.classification === "HIGH") {
         nodeType = "high";
+        marker = "▲";
+      } else if (node.classification === "MEDIUM") {
+        nodeType = "medium";
+        marker = "◆";
       } else if (node.classification === "MEDIUM") {
         nodeType = "medium";
       }
@@ -68,7 +75,7 @@ export default function NetworkGraph({
       elements.push({
         data: {
           id: node.id,
-          label: node.label.length > 14 ? node.label.substring(0, 12) + "…" : node.label,
+          label: `${marker} ${node.label.length > 14 ? node.label.substring(0, 12) + "…" : node.label}`,
           full_id: node.id,
           type: nodeType,
           score: node.risk_score,
@@ -123,6 +130,7 @@ export default function NetworkGraph({
             "background-color": "#ef4444",
             "border-color": "#f87171",
             "border-width": 3,
+            shape: "star",
             width: 38,
             height: 38,
           },
@@ -133,6 +141,7 @@ export default function NetworkGraph({
             "background-color": "#f97316",
             "border-color": "#fb923c",
             "border-width": 2.5,
+            shape: "triangle",
           },
         },
         {
@@ -140,6 +149,7 @@ export default function NetworkGraph({
           style: {
             "background-color": "#f59e0b",
             "border-color": "#fbbf24",
+            shape: "diamond",
           },
         },
         {
@@ -147,6 +157,7 @@ export default function NetworkGraph({
           style: {
             "background-color": "#3b82f6",
             "border-color": "#60a5fa",
+            shape: "ellipse",
           },
         },
         {

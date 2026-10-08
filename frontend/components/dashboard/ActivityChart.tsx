@@ -1,6 +1,4 @@
 "use client";
-
-import { useEffect, useState } from "react";
 import {
   LineChart,
   Line,
@@ -10,18 +8,14 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { ActivityTrendPoint, fetchActivityTrend } from "@/lib/api";
+import { ActivityTrendPoint } from "@/lib/api";
 
-export default function ActivityChart() {
-  const [data, setData] = useState<ActivityTrendPoint[]>([]);
-  const [loading, setLoading] = useState(true);
+interface ActivityChartProps {
+  data: ActivityTrendPoint[];
+  loading: boolean;
+}
 
-  useEffect(() => {
-    fetchActivityTrend()
-      .then((res) => setData(res))
-      .catch((err) => console.error("Error fetching activity trend:", err))
-      .finally(() => setLoading(false));
-  }, []);
+export default function ActivityChart({ data, loading }: ActivityChartProps) {
 
   return (
     <div className="rounded-xl border border-slate-800 bg-[#0b1621] p-5 shadow-xl">

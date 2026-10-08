@@ -1,18 +1,22 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CheckCircle2, FileUp, Sparkles, Upload, X } from "lucide-react";
-import Papa from "papaparse";
-import { uploadTransactionsCsv, loadDemoDataset } from "@/lib/api";
+import { CheckCircle2, FileUp, LoaderCircle, Upload, X } from "lucide-react";
+import { uploadTransactionsCsv } from "@/lib/api";
 
-export type CsvRow = Record<string, string>;
+export interface CsvProcessingResult {
+  fileName: string;
+  stats: Awaited<ReturnType<typeof uploadTransactionsCsv>>["stats"];
+}
 
 interface CsvUploaderProps {
-  onDataLoaded: (data: CsvRow[], fileName: string) => void;
+  onDataLoaded: (result: CsvProcessingResult) => void;
+  onProcessingChange: (isProcessing: boolean) => void;
 }
 
 export default function CsvUploader({
   onDataLoaded,
+  onProcessingChange,
 }: CsvUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -30,50 +34,20 @@ export default function CsvUploader({
     }
 
     setLoading(true);
+    onProcessingChange(true);
 
     try {
-      // 1. Post to FastAPI backend for 28-D feature extraction & XGBoost + Rule scoring
-      await uploadTransactionsCsv(file);
-
-      // 2. Local parse for immediate table rendering
-      Papa.parse<CsvRow>(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          const cleanedData = results.data.filter((row) =>
-            Object.values(row).some((v) => v !== undefined && v !== "")
-          );
-          setFileName(file.name);
-          setRowCount(cleanedData.length);
-          onDataLoaded(cleanedData, file.name);
-          setLoading(false);
-        },
-        error: () => {
-          setError("Something went wrong while reading the CSV locally.");
-          setLoading(false);
-        },
-      });
+      // The backend owns CSV parsing, feature extraction, ML inference, and rule scoring.
+      // Do not parse or retain the raw bank feed in the browser.
+      const result = await uploadTransactionsCsv(file);
+      setFileName(file.name);
+      setRowCount(result.stats.total_transactions);
+      onDataLoaded({ fileName: file.name, stats: result.stats });
     } catch (err: any) {
       setError(err.message || "Failed to upload and process CSV in backend engine.");
-      setLoading(false);
-    }
-  };
-
-  const handleLoadDemo = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      const res = await loadDemoDataset();
-      const demoRows = Array.from({ length: res.stats?.total_transactions || 683 }, (_, i) => ({
-        id: `TXN_${i + 1}`,
-      }));
-      setFileName("synthetic_banking_demo.csv");
-      setRowCount(res.stats?.total_transactions || 683);
-      onDataLoaded(demoRows, "synthetic_banking_demo.csv");
-    } catch (err: any) {
-      setError("Failed to load demo dataset: " + err.message);
     } finally {
       setLoading(false);
+      onProcessingChange(false);
     }
   };
 
@@ -106,7 +80,7 @@ export default function CsvUploader({
               Transaction Data Ingestion
             </h2>
             <p className="mt-1 text-xs text-slate-400">
-              Upload raw CSV bank logs or load the calibrated simulated banking dataset (No database needed).
+              Upload a bank transaction CSV. It will be processed by the backend ML and rule engines before any analytics are displayed.
             </p>
           </div>
         </div>
@@ -121,20 +95,15 @@ export default function CsvUploader({
           />
 
           <button
-            onClick={handleLoadDemo}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-purple-500/40 bg-purple-500/10 px-3.5 py-2.5 text-xs font-semibold text-purple-300 transition hover:bg-purple-500/20"
-          >
-            <Sparkles size={14} />
-            {loading ? "Processing..." : "Load Demo Banking Feed"}
-          </button>
-
-          <button
             onClick={() => fileInputRef.current?.click()}
             disabled={loading}
             className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-blue-500"
           >
-            <Upload size={15} />
+            {loading ? (
+              <LoaderCircle size={15} className="animate-spin" />
+            ) : (
+              <Upload size={15} />
+            )}
             {loading ? "Analyzing..." : "Upload CSV"}
           </button>
         </div>

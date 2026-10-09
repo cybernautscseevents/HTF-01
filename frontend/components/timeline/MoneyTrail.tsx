@@ -77,8 +77,10 @@ export default function MoneyTrail({ trailData: externalTrail }: MoneyTrailProps
   const outgoing = selectedTransactions.filter((item) => item.sender_id === selectedAccount);
   const received = incoming.reduce((sum, item) => sum + item.amount, 0);
   const forwarded = outgoing.reduce((sum, item) => sum + item.amount, 0);
-  const risk = trail.find((item) => item.receiver_id === selectedAccount)?.receiver_risk_score || 0;
-  const classification = trail.find((item) => item.receiver_id === selectedAccount)?.receiver_classification || "LOW";
+  const selectedRisk = data?.account_risk?.[selectedAccount];
+  const selectedHop = trail.find((item) => item.receiver_id === selectedAccount);
+  const risk = selectedRisk?.risk_score ?? selectedHop?.receiver_risk_score ?? 0;
+  const classification = selectedRisk?.classification ?? selectedHop?.receiver_classification ?? "LOW";
 
   return (
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#050d16] shadow-2xl">

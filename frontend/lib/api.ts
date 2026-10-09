@@ -61,6 +61,7 @@ export interface AccountSummary {
   mule_probability: number;
   classification: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   classification_source?: "risk_score" | "manual";
+  original_classification?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   is_flagged: boolean;
   is_mule: boolean;
   account_type: string;
@@ -176,6 +177,11 @@ export interface MoneyTrailData {
   network_status?: "Critical" | "High" | "Medium" | "Low";
   network_role?: string;
   transaction_ids?: string[];
+  account_risk?: Record<string, {
+    risk_score: number;
+    classification: string;
+    is_mule: boolean;
+  }>;
 }
 
 export async function fetchStats(): Promise<DashboardStats> {
@@ -184,8 +190,11 @@ export async function fetchStats(): Promise<DashboardStats> {
   return res.json();
 }
 
-export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
+export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot | null> {
   const res = await fetch(`${API_BASE_URL}/dashboard`, { cache: "no-store" });
+  // A fresh backend has no analyzed dataset yet. That is an expected
+  // upload-first state, not a dashboard failure.
+  if (res.status === 409) return null;
   if (!res.ok) throw new Error("Failed to fetch dashboard data");
   return res.json();
 }
@@ -219,12 +228,21 @@ export async function fetchAccounts(params: {
   if (params.sort_order) query.set("sort_order", params.sort_order);
 
   const res = await fetch(`${API_BASE_URL}/accounts?${query.toString()}`, { cache: "no-store" });
+  // The backend starts empty by design. Treat the pre-upload 409 as an
+  // empty registry so account-related pages can render their upload guidance.
+  if (res.status === 409) return { total: 0, accounts: [] };
   if (!res.ok) throw new Error("Failed to fetch accounts");
   return res.json();
 }
 
-export async function fetchAccountRisk(accountId: string): Promise<AccountDetail> {
-  const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/risk`, { cache: "no-store" });
+export async function fetchAccountRisk(
+  accountId: string,
+  signal?: AbortSignal,
+): Promise<AccountDetail> {
+  const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/risk`, {
+    cache: "no-store",
+    signal,
+  });
   if (!res.ok) throw new Error(`Failed to fetch risk for account ${accountId}`);
   return res.json();
 }
@@ -232,13 +250,25 @@ export async function fetchAccountRisk(accountId: string): Promise<AccountDetail
 export async function overrideAccountClassification(
   accountId: string,
   classification: AccountSummary["classification"],
+  reason: string = "Manual investigator override",
 ): Promise<AccountSummary> {
   const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/classification`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ classification }),
+    body: JSON.stringify({ classification, reason }),
   });
   if (!res.ok) throw new Error("Failed to update account classification");
+  const payload = await res.json();
+  return payload.account;
+}
+
+export async function resetAccountClassification(accountId: string): Promise<AccountSummary> {
+  const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/classification`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ classification: "RESET" }),
+  });
+  if (!res.ok) throw new Error("Failed to reset account classification");
   const payload = await res.json();
   return payload.account;
 }
@@ -251,6 +281,8 @@ export async function fetchAccountNetwork(accountId: string, depth: number = 1):
 
 export async function fetchFullGraph(maxNodes: number = 150): Promise<NetworkGraphData> {
   const res = await fetch(`${API_BASE_URL}/graph/full?max_nodes=${maxNodes}`, { cache: "no-store" });
+  // No graph exists until a CSV has completed backend analysis.
+  if (res.status === 409) return { nodes: [], edges: [], total_nodes: 0, total_edges: 0 };
   if (!res.ok) throw new Error("Failed to fetch full network graph");
   return res.json();
 }

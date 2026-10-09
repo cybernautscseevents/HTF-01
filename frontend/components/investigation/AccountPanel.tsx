@@ -32,17 +32,30 @@ export default function AccountPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!accountId) return;
+    const controller = new AbortController();
+
+    setData(null);
+    setError(null);
+    setActiveTab("evidence");
+
+    if (!accountId) {
+      setLoading(false);
+      return () => controller.abort();
+    }
 
     setLoading(true);
-    setError(null);
-    fetchAccountRisk(accountId)
+    fetchAccountRisk(accountId, controller.signal)
       .then((res) => setData(res))
       .catch((err) => {
+        if (controller.signal.aborted) return;
         console.error("Failed to load account:", err);
         setError("Account details could not be loaded");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [accountId]);
 
   if (!accountId) {

@@ -108,12 +108,21 @@ class TrailTracer:
             accounts,
             key=lambda account: (distances.get(account, 999), account),
         )
+        account_risk = {
+            account: {
+                "risk_score": round(float(scores_dict.get(account, {}).get("final_score", 0.0)), 1),
+                "classification": scores_dict.get(account, {}).get("classification", "LOW"),
+                "is_mule": bool(scores_dict.get(account, {}).get("is_mule", False)),
+            }
+            for account in ordered_accounts
+        }
         return {
             "origin_transaction_id": transaction_id,
             "network_id": None,
             "total_hops": max((hop["hop"] for hop in trail), default=0),
             "origin_amount": float(seed_txn["amount"]),
             "ordered_accounts": ordered_accounts,
+            "account_risk": account_risk,
             "trail": trail,
         }
  

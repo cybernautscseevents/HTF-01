@@ -48,6 +48,14 @@ export default function DashboardPage() {
     setLoading(true);
     fetchDashboardSnapshot()
       .then((data) => {
+        if (!data) {
+          setStats(null);
+          setActivity([]);
+          setTopAccounts([]);
+          setNetworkCases([]);
+          setHasAnalysis(false);
+          return;
+        }
         setStats(data.stats);
         setActivity(data.activity);
         setTopAccounts(data.top_accounts);

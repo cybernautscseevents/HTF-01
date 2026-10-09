@@ -134,6 +134,7 @@ class DataStore:
                     "ml_score": ml_score,
                     "mule_probability": round(mule_prob, 4),
                     "classification": classification,
+                    "original_classification": classification,
                     "classification_source": "risk_score",
                     "is_flagged": is_flagged,
                     "is_mule": (classification in ["CRITICAL", "HIGH"]),
@@ -398,6 +399,20 @@ class DataStore:
             self.manual_classifications[account_key] = level
             self._refresh_manual_classifications()
             return self.scores_cache[account_key]
+
+    def reset_classification(self, account_id: str) -> Optional[Dict[str, Any]]:
+        with self.lock:
+            account_key = str(account_id).strip()
+            record = self.scores_cache.get(account_key)
+            if not record:
+                return None
+            self.manual_classifications.pop(account_key, None)
+            record["classification"] = record["original_classification"]
+            record["classification_source"] = "risk_score"
+            record["is_flagged"] = record["classification"] in {"CRITICAL", "HIGH"}
+            record["is_mule"] = record["classification"] in {"CRITICAL", "HIGH"}
+            self._refresh_manual_classifications()
+            return record
 
     def _refresh_manual_classifications(self):
         for account_id, classification in self.manual_classifications.items():

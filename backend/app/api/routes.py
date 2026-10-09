@@ -18,6 +18,7 @@ class AlphaConfigRequest(BaseModel):
 
 class ClassificationOverrideRequest(BaseModel):
     classification: str
+    reason: Optional[str] = None
 
 
 @router.post("/analysis/summary")
@@ -170,7 +171,7 @@ def override_account_classification(
     if not store.is_loaded:
         raise HTTPException(status_code=409, detail="Upload a bank CSV before changing classifications.")
     try:
-        updated = store.set_manual_classification(account_id, request.classification)
+        updated = store.reset_classification(account_id) if request.classification.upper() == "RESET" else store.set_manual_classification(account_id, request.classification)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     if not updated:

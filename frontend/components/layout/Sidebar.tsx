@@ -6,6 +6,7 @@ import {
   PanelLeftOpen,
   Search,
   ShieldCheck,
+  Tags,
   Users,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -15,6 +16,7 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Investigate", href: "/investigate", icon: Search },
   { name: "Accounts", href: "/accounts", icon: Users },
+  { name: "Classification", href: "/classification", icon: Tags },
 ];
 
 export default function Sidebar() {

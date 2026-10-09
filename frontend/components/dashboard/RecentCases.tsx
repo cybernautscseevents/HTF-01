@@ -1,100 +1,98 @@
-const cases = [
-  {
-    id: "CAS-2026-001",
-    date: "05 Oct 2026",
-    amount: "₹50,000",
-    accounts: "12 accounts",
-    status: "Critical",
-  },
-  {
-    id: "CAS-2026-002",
-    date: "04 Oct 2026",
-    amount: "₹1,20,000",
-    accounts: "18 accounts",
-    status: "High",
-  },
-  {
-    id: "CAS-2026-003",
-    date: "03 Oct 2026",
-    amount: "₹25,000",
-    accounts: "7 accounts",
-    status: "Investigating",
-  },
-  {
-    id: "CAS-2026-004",
-    date: "02 Oct 2026",
-    amount: "₹75,000",
-    accounts: "10 accounts",
-    status: "High",
-  },
-  {
-    id: "CAS-2026-005",
-    date: "01 Oct 2026",
-    amount: "₹10,000",
-    accounts: "6 accounts",
-    status: "Closed",
-  },
-];
+"use client";
+import Link from "next/link";
+import { LoaderCircle } from "lucide-react";
+import { NetworkCase } from "@/lib/api";
 
-const statusStyles: Record<string, string> = {
-  Critical: "bg-red-500/20 text-red-400",
-  High: "bg-orange-500/20 text-orange-400",
-  Investigating: "bg-blue-500/20 text-blue-400",
-  Closed: "bg-emerald-500/20 text-emerald-400",
-};
+interface RecentCasesProps {
+  cases: NetworkCase[];
+  loading: boolean;
+}
 
-export default function RecentCases() {
+export default function RecentCases({ cases, loading }: RecentCasesProps) {
+
   return (
-    <div className="rounded-lg border border-slate-800 bg-[#0b1621] p-4">
-      <h3 className="mb-4 text-sm font-semibold text-white">
-        Recent Suspicious Cases
-      </h3>
+    <div className="rounded-xl border border-slate-800 bg-[#0b1621] p-5 shadow-xl">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-white">
+            High-Risk Entities & Network Cases
+          </h3>
+          <p className="text-[11px] text-slate-500">
+            Highest priority transaction networks flagged for immediate investigation
+          </p>
+        </div>
+
+        <Link
+          href="/accounts"
+          className="text-[11px] font-medium text-blue-400 hover:text-blue-300 transition"
+        >
+          View All Accounts →
+        </Link>
+      </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-[10px]">
-          <thead className="border-b border-slate-800 text-slate-500">
-            <tr>
-              <th className="pb-2">Case ID</th>
-              <th className="pb-2">Reported Date</th>
-              <th className="pb-2">Amount</th>
-              <th className="pb-2">Detected Network</th>
-              <th className="pb-2">Status</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {cases.map((item) => (
-              <tr
-                key={item.id}
-                className="border-b border-slate-800/60"
-              >
-                <td className="py-2 text-slate-300">
-                  {item.id}
-                </td>
-
-                <td className="py-2 text-slate-400">
-                  {item.date}
-                </td>
-
-                <td className="py-2 text-slate-300">
-                  {item.amount}
-                </td>
-
-                <td className="py-2 text-slate-400">
-                  {item.accounts}
-                </td>
-
-                <td className="py-2">
-                  <span
-                    className={`rounded px-2 py-1 ${statusStyles[item.status]}`}
-                  >
-                    {item.status}
-                  </span>
-                </td>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
+            <LoaderCircle size={15} className="animate-spin text-blue-400" />
+            Waiting for backend network analysis...
+          </div>
+        ) : cases.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-500">
+            No suspicious cases detected in current dataset.
+          </div>
+        ) : (
+          <table className="w-full text-left text-xs">
+            <thead className="border-b border-slate-800 text-slate-500 text-[11px]">
+              <tr>
+                <th className="pb-2.5">Case ID</th>
+                <th className="pb-2.5">Reported Date</th>
+                <th className="pb-2.5">Amount</th>
+                <th className="pb-2.5">Detected Network</th>
+                <th className="pb-2.5">Status</th>
+                <th className="pb-2.5 text-right">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody className="divide-y divide-slate-800/60">
+              {cases.map((item) => (
+                <tr key={item.network_id} className="hover:bg-slate-900/40">
+                  <td className="py-2.5 font-mono font-medium text-slate-200">
+                    {item.case_id}
+                  </td>
+                  <td className="py-2.5 text-slate-300">{item.reported_date}</td>
+                  <td className="py-2.5 font-mono text-slate-300">
+                    ₹{item.amount.toLocaleString("en-IN")}
+                  </td>
+                  <td className="py-2.5 font-mono text-slate-300">
+                    {item.network_id} ({item.people_involved} people)
+                  </td>
+                  <td className="py-2.5">
+                    <span
+                      className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
+                        item.status === "Critical"
+                          ? "bg-red-500/10 text-red-400 border border-red-500/30"
+                          : item.status === "High"
+                          ? "bg-orange-500/10 text-orange-400 border border-orange-500/30"
+                          : "bg-blue-500/10 text-blue-400 border border-blue-500/30"
+                      }`}
+                    >
+                      {item.status}
+                    </span>
+                  </td>
+
+                  <td className="py-2.5 text-right">
+                    <Link
+                      href="/investigate"
+                      className="text-[11px] font-medium text-blue-400 hover:text-blue-300"
+                    >
+                      Details →
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

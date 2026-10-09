@@ -54,6 +54,7 @@ def root():
             "full_graph": "GET /api/graph/full",
             "stats": "GET /api/stats",
             "tune_alpha": "POST /api/config/alpha",
+            "ai_summary": "POST /api/analysis/summary",
             "docs": "/docs"
         }
     }

@@ -6,7 +6,7 @@ import {
   ArrowLeftRight,
   Network,
   ShieldAlert,
-  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 
 import AppShell from "@/components/layout/AppShell";
@@ -21,6 +21,8 @@ import {
   ActivityTrendPoint,
   DashboardStats,
   NetworkCase,
+  AiAnalysisSummary,
+  fetchAiAnalysisSummary,
   fetchDashboardSnapshot,
 } from "@/lib/api";
 
@@ -31,7 +33,10 @@ export default function DashboardPage() {
   const [networkCases, setNetworkCases] = useState<NetworkCase[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasAnalysis, setHasAnalysis] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [aiSummary, setAiSummary] = useState<AiAnalysisSummary | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [refreshKey] = useState(0);
 
   useEffect(() => {
     // The backend keeps the analyzed dataset in its store while the app runs.
@@ -72,13 +77,21 @@ export default function DashboardPage() {
       setActivity([]);
       setTopAccounts([]);
       setNetworkCases([]);
+      setAiSummary(null);
+      setAiError("");
     }
   };
 
-  const handleRefresh = () => {
-    if (!hasAnalysis) return;
-    setRefreshKey((k) => k + 1);
-    loadData();
+  const handleGenerateSummary = async () => {
+    setAiLoading(true);
+    setAiError("");
+    try {
+      setAiSummary(await fetchAiAnalysisSummary());
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Unable to generate AI summary.");
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   return (
@@ -95,15 +108,6 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {hasAnalysis && (
-            <button
-            onClick={handleRefresh}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-600 hover:text-white"
-            >
-              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-              Sync Dashboard
-            </button>
-          )}
         </div>
 
         {/* CSV Upload & Demo Feed Ingestion */}
@@ -154,6 +158,72 @@ export default function DashboardPage() {
             icon={Network}
           />
         </div>
+
+        {/* <section className="rounded-xl border border-indigo-500/25 bg-gradient-to-br from-[#0b1424] to-[#071019] p-5">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <div>
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-indigo-300" />
+                <h3 className="text-sm font-semibold text-white">Grounded AI Investigation Summary</h3>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                Summarizes only the completed rule-engine, ML, risk, and network evidence.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleGenerateSummary}
+              disabled={aiLoading}
+              className="flex items-center justify-center gap-2 rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-3.5 py-2 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Sparkles size={14} />
+              {aiLoading ? "Analyzing Evidence..." : aiSummary ? "Refresh Summary" : "Generate Summary"}
+            </button>
+          </div>
+
+          {aiError && (
+            <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {aiError}
+            </p>
+          )}
+
+          {aiSummary && (
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+              <div>
+                <p className="text-sm leading-6 text-slate-200">{aiSummary.summary}</p>
+                <h4 className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  Key Findings
+                </h4>
+                <ul className="mt-2 space-y-2 text-xs text-slate-300">
+                  {aiSummary.key_findings.map((finding, index) => (
+                    <li key={`${finding}-${index}`} className="flex gap-2">
+                      <span className="text-indigo-300">•</span>
+                      <span>{finding}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-black/10 p-3">
+                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  High-Priority Networks
+                </h4>
+                <div className="mt-2 space-y-2">
+                  {aiSummary.high_priority_networks.length === 0 ? (
+                    <p className="text-xs text-slate-500">No high-priority networks were returned.</p>
+                  ) : aiSummary.high_priority_networks.map((network) => (
+                    <div key={network.case_id} className="rounded-md border border-slate-800 px-3 py-2">
+                      <div className="flex justify-between gap-3 text-xs">
+                        <span className="font-medium text-slate-200">{network.case_id}</span>
+                        <span className="text-red-300">{network.risk_score}/100</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-400">{network.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </section> */}
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">

@@ -46,7 +46,7 @@ export default function AccountsPage() {
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <h2 className="text-xl font-bold text-white tracking-wide">
-              MuleTrace Account Registry
+              Account Registry
             </h2>
             <p className="mt-0.5 text-xs text-slate-400">
               Deterministic 100-pt heuristics & XGBoost binary classifier scored accounts ({total} total)

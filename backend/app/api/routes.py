@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.core.store import DataStore
 from app.data.csv_parser import parse_transactions_csv, parse_accounts_csv
 from app.data.synthetic_generator import generate_synthetic_banking_data
+from app.llm.summary_service import SummaryServiceError, generate_summary
 
 router = APIRouter(prefix="/api", tags=["Investigation API"])
 store = DataStore()
@@ -13,6 +14,24 @@ store = DataStore()
 
 class AlphaConfigRequest(BaseModel):
     alpha: float
+
+
+class ClassificationOverrideRequest(BaseModel):
+    classification: str
+
+
+@router.post("/analysis/summary")
+def get_ai_analysis_summary():
+    """Summarize completed rule, ML, account, transaction, and network evidence."""
+    try:
+        return {
+            "status": "success",
+            "model": "OpenRouter",
+            "summary": generate_summary(store),
+        }
+    except SummaryServiceError as exc:
+        status_code = 409 if "not configured" in str(exc) or "Upload" in str(exc) else 502
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.post("/upload")
@@ -141,6 +160,26 @@ def get_account_risk(account_id: str):
     if not detail:
         raise HTTPException(status_code=404, detail=f"Account '{account_id}' not found")
     return detail
+
+
+@router.patch("/accounts/{account_id}/classification")
+def override_account_classification(
+    account_id: str,
+    request: ClassificationOverrideRequest,
+):
+    if not store.is_loaded:
+        raise HTTPException(status_code=409, detail="Upload a bank CSV before changing classifications.")
+    try:
+        updated = store.set_manual_classification(account_id, request.classification)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Account '{account_id}' not found")
+    return {
+        "status": "success",
+        "account": updated,
+        "message": f"Classification for {account_id} manually set to {updated['classification']}.",
+    }
 
 
 @router.get("/accounts/{account_id}/network")

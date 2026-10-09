@@ -1,6 +1,24 @@
 import os
 from pathlib import Path
 
+
+def _load_dotenv(path: Path) -> None:
+    """Load simple KEY=VALUE entries without adding a runtime dependency."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith("#") or "=" not in entry:
+            continue
+        key, value = entry.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+
 # Base Paths
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ML_DIR = BASE_DIR.parent / "ML"
@@ -32,3 +50,14 @@ CORS_ORIGINS = [
     "http://127.0.0.1:5173",
     "*"
 ]
+
+# OpenRouter is used only by the optional grounded investigation summarizer.
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = os.getenv(
+    "OPENROUTER_MODEL",
+    "meta-llama/llama-3.1-8b-instruct:free",
+).strip()
+OPENROUTER_BASE_URL = os.getenv(
+    "OPENROUTER_BASE_URL",
+    "https://openrouter.ai/api/v1",
+).rstrip("/")

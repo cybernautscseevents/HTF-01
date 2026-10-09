@@ -6,10 +6,9 @@ import {
   GitFork,
   Layers,
   Network,
+  Pause,
   Play,
   ReceiptText,
-  RefreshCw,
-  Search,
   ShieldAlert,
   Zap,
 } from "lucide-react";
@@ -18,7 +17,7 @@ import AppShell from "@/components/layout/AppShell";
 import NetworkGraph from "@/components/investigation/NetworkGraph";
 import AccountPanel from "@/components/investigation/AccountPanel";
 import MoneyTrail from "@/components/timeline/MoneyTrail";
-import { AccountSummary, fetchAccounts, loadDemoDataset } from "@/lib/api";
+import { AccountSummary, MoneyTrailData, fetchAccountTrail, fetchAccounts } from "@/lib/api";
 
 interface Scenario {
   icon: string;
@@ -29,11 +28,14 @@ interface Scenario {
 
 export default function InvestigatePage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
-  const [inputAccount, setInputAccount] = useState("");
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [showTrail, setShowTrail] = useState(true);
-  const [loadingDemo, setLoadingDemo] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showNetworkDetails, setShowNetworkDetails] = useState(false);
+  const [simulationTrail, setSimulationTrail] = useState<MoneyTrailData | null>(null);
+  const [simulationHopIndex, setSimulationHopIndex] = useState(0);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationLoading, setSimulationLoading] = useState(false);
+  const [simulationError, setSimulationError] = useState("");
 
   useEffect(() => {
     fetchAccounts({ limit: 500 })
@@ -50,7 +52,6 @@ export default function InvestigatePage() {
         setScenarios(available);
         if (available[0]) {
           setSelectedAccountId((current) => current || available[0].accountId);
-          setInputAccount((current) => current || available[0].accountId);
         }
       })
       .catch(() => setScenarios([]));
@@ -58,27 +59,61 @@ export default function InvestigatePage() {
 
   const handleSelectAccount = (id: string) => {
     setSelectedAccountId(id);
-    setInputAccount(id);
+    setIsSimulating(false);
+    setSimulationTrail(null);
+    setSimulationHopIndex(0);
+    setSimulationError("");
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputAccount.trim()) {
-      setSelectedAccountId(inputAccount.trim());
+  useEffect(() => {
+    if (!isSimulating || !simulationTrail?.trail.length) return;
+
+    const timer = setInterval(() => {
+      setSimulationHopIndex((current) =>
+        current >= simulationTrail.trail.length - 1 ? 0 : current + 1,
+      );
+    }, 1900);
+
+    return () => clearInterval(timer);
+  }, [isSimulating, simulationTrail]);
+
+  const handleSimulation = async () => {
+    if (isSimulating) {
+      setIsSimulating(false);
+      return;
     }
-  };
 
-  const handleLoadDemo = async () => {
-    setLoadingDemo(true);
+    if (simulationTrail?.trail.length) {
+      setIsSimulating(true);
+      return;
+    }
+
+    if (!selectedAccountId) return;
+
+    setSimulationLoading(true);
+    setSimulationError("");
     try {
-      await loadDemoDataset();
-      setRefreshKey((prev) => prev + 1);
-    } catch (err) {
-      console.error("Failed to reload demo data:", err);
+      const trail = await fetchAccountTrail(selectedAccountId);
+      if (!trail.trail.length) {
+        setSimulationError("No transaction trail is available for this account.");
+        return;
+      }
+      setSimulationTrail(trail);
+      setSimulationHopIndex(0);
+      setIsSimulating(true);
+    } catch (error) {
+      setSimulationError(
+        error instanceof Error ? error.message : "Unable to load simulation trail.",
+      );
     } finally {
-      setLoadingDemo(false);
+      setSimulationLoading(false);
     }
   };
+
+  const activeSimulationHop =
+    isSimulating && simulationTrail?.trail
+      ? simulationTrail.trail[simulationHopIndex]
+      : null;
 
   return (
     <AppShell>
@@ -95,27 +130,6 @@ export default function InvestigatePage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleLoadDemo}
-              disabled={loadingDemo}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-blue-500 hover:text-white"
-            >
-              <RefreshCw size={13} className={loadingDemo ? "animate-spin text-blue-400" : ""} />
-              {loadingDemo ? "Reloading..." : "Reset Demo Data"}
-            </button>
-            <button
-              onClick={() => setShowTrail(!showTrail)}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
-                showTrail
-                  ? "bg-blue-600 text-white hover:bg-blue-500"
-                  : "border border-slate-700 bg-slate-900 text-slate-300 hover:text-white"
-              }`}
-            >
-              <ReceiptText size={14} />
-              {showTrail ? "Hide Money Trail" : "View Money Trail"}
-            </button>
-          </div>
         </div>
 
         {/* Quick Scenario Preset Selector */}
@@ -140,6 +154,45 @@ export default function InvestigatePage() {
           ))}
         </div>
 
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-800 bg-[#071019] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-[11px] text-slate-400">
+            Replay downstream money movement for the selected account.
+          </span>
+          <button
+            type="button"
+            onClick={handleSimulation}
+            disabled={simulationLoading || !selectedAccountId}
+            className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
+              isSimulating
+                ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-300"
+                : "border-slate-700 bg-slate-900/80 text-slate-300 hover:border-indigo-500/50 hover:text-white"
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            {isSimulating ? <Pause size={13} /> : <Play size={13} />}
+            {simulationLoading
+              ? "Loading Simulation..."
+              : isSimulating
+                ? "Pause Simulation"
+                : simulationTrail
+                  ? "Resume Simulation"
+                  : "Run Simulation"}
+          </button>
+        </div>
+
+        {simulationError && (
+          <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {simulationError}
+          </p>
+        )}
+
+        {activeSimulationHop && (
+          <div className="flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 font-mono text-[11px] text-indigo-300">
+            <Zap size={13} />
+            Hop #{activeSimulationHop.hop}: {activeSimulationHop.sender_id} →{" "}
+            {activeSimulationHop.receiver_id} (₹{activeSimulationHop.amount.toLocaleString("en-IN")})
+          </div>
+        )}
+
         {/* Central Investigation Workspace: Graph (Left) + Account Panel (Right) */}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_420px]">
           {/* Left Canvas: Interactive Network Graph */}
@@ -149,6 +202,7 @@ export default function InvestigatePage() {
               selectedAccountId={selectedAccountId}
               onSelectAccount={handleSelectAccount}
               onRefresh={() => setRefreshKey((k) => k + 1)}
+              activeSimulationHop={activeSimulationHop}
             />
           </div>
 
@@ -161,12 +215,22 @@ export default function InvestigatePage() {
           </div>
         </div>
 
-        {/* Bottom Section: Reconstructed Money Trail Timeline */}
-        {showTrail && (
-          <div className="pt-2">
+        <div className="flex justify-center border-t border-slate-800 pt-5">
+          <button
+            onClick={() => setShowNetworkDetails((visible) => !visible)}
+            className="flex items-center gap-2 rounded-lg border border-blue-500/40 bg-blue-500/10 px-5 py-2.5 text-xs font-semibold text-blue-300 transition hover:bg-blue-500/20"
+          >
+            <ReceiptText size={15} />
+            {showNetworkDetails ? "Hide Network Details" : "Load Network Details"}
+          </button>
+        </div>
+
+        {showNetworkDetails && (
+          <div className="pt-1">
             <MoneyTrail />
           </div>
         )}
+
       </div>
     </AppShell>
   );

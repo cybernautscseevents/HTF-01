@@ -2,15 +2,12 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import {
-  ArrowDownRight,
   ArrowRight,
-  Bell,
   CircleDollarSign,
   LoaderCircle,
   Search,
-  SlidersHorizontal,
-  UserRound,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { MoneyTrailData, fetchMoneyTrail } from "@/lib/api";
 
 interface MoneyTrailProps {
@@ -38,6 +35,7 @@ function nodeTone(role: NodeRole) {
 }
 
 export default function MoneyTrail({ trailData: externalTrail }: MoneyTrailProps) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [data, setData] = useState<MoneyTrailData | null>(externalTrail || null);
   const [selectedAccount, setSelectedAccount] = useState("");
@@ -85,19 +83,10 @@ export default function MoneyTrail({ trailData: externalTrail }: MoneyTrailProps
   return (
     <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#050d16] shadow-2xl">
       <header className="border-b border-slate-800 px-5 py-4">
-        <div className="flex items-start justify-between gap-4">
+        <div>
           <div>
             <h2 className="text-lg font-semibold text-white">Network Investigation</h2>
             <p className="text-xs text-slate-400">Explore the money trail and connections</p>
-          </div>
-          <div className="hidden items-center gap-3 text-slate-400 sm:flex">
-            <Bell size={16} />
-            <div className="flex items-center gap-2 text-xs">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-600 text-white">
-                <UserRound size={13} />
-              </span>
-              Analyst
-            </div>
           </div>
         </div>
 
@@ -117,12 +106,6 @@ export default function MoneyTrail({ trailData: externalTrail }: MoneyTrailProps
             className="rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? <LoaderCircle size={15} className="animate-spin" /> : "Load Network"}
-          </button>
-          <button type="button" className="flex items-center gap-1 rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300">
-            Layout: Hierarchical <ArrowDownRight size={13} />
-          </button>
-          <button type="button" className="flex items-center gap-1 rounded-md border border-slate-700 px-3 py-2 text-xs text-slate-300">
-            <SlidersHorizontal size={13} /> Filters
           </button>
         </form>
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
@@ -244,7 +227,12 @@ export default function MoneyTrail({ trailData: externalTrail }: MoneyTrailProps
               <div className="flex justify-between text-slate-400"><span>Unique receivers</span><b className="text-slate-200">{new Set(outgoing.map((item) => item.receiver_id)).size}</b></div>
               <div className="flex justify-between text-slate-400"><span>Median hold time</span><b className="text-slate-200">{selectedTransactions.length ? Math.round(selectedTransactions.reduce((sum, item) => sum + item.holding_time_seconds, 0) / selectedTransactions.length) : 0} seconds</b></div>
             </div>
-            <button type="button" className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-500">
+            <button
+              type="button"
+              disabled={!selectedAccount}
+              onClick={() => router.push(`/accounts/${encodeURIComponent(selectedAccount)}`)}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               View Full Details <ArrowRight size={14} />
             </button>
           </aside>

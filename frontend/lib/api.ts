@@ -40,6 +40,18 @@ export interface DashboardSnapshot {
   network_cases: NetworkCase[];
 }
 
+export interface AiAnalysisSummary {
+  summary: string;
+  key_findings: string[];
+  high_priority_networks: Array<{
+    case_id: string;
+    network_id: string;
+    risk_score: number;
+    reason: string;
+  }>;
+  limitations: string[];
+}
+
 export interface AccountSummary {
   account_id: string;
   network_id?: string;
@@ -48,6 +60,7 @@ export interface AccountSummary {
   ml_score: number;
   mule_probability: number;
   classification: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  classification_source?: "risk_score" | "manual";
   is_flagged: boolean;
   is_mule: boolean;
   account_type: string;
@@ -177,6 +190,18 @@ export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
   return res.json();
 }
 
+export async function fetchAiAnalysisSummary(): Promise<AiAnalysisSummary> {
+  const res = await fetch(`${API_BASE_URL}/analysis/summary`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.detail || "Failed to generate AI analysis summary");
+  }
+  return payload.summary;
+}
+
 export async function fetchAccounts(params: {
   skip?: number;
   limit?: number;
@@ -202,6 +227,20 @@ export async function fetchAccountRisk(accountId: string): Promise<AccountDetail
   const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/risk`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to fetch risk for account ${accountId}`);
   return res.json();
+}
+
+export async function overrideAccountClassification(
+  accountId: string,
+  classification: AccountSummary["classification"],
+): Promise<AccountSummary> {
+  const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/classification`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ classification }),
+  });
+  if (!res.ok) throw new Error("Failed to update account classification");
+  const payload = await res.json();
+  return payload.account;
 }
 
 export async function fetchAccountNetwork(accountId: string, depth: number = 1): Promise<NetworkGraphData> {
@@ -244,6 +283,14 @@ export async function fetchMoneyTrail(transactionId: string): Promise<MoneyTrail
   const caseRes = await fetch(caseUrl, { cache: "no-store" });
   if (!caseRes.ok) throw new Error(`Transaction or case ${transactionId} was not found`);
   return caseRes.json();
+}
+
+export async function fetchAccountTrail(accountId: string): Promise<MoneyTrailData> {
+  const res = await fetch(`${API_BASE_URL}/accounts/${encodeURIComponent(accountId)}/trail`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Failed to trace money trail for account ${accountId}`);
+  return res.json();
 }
 
 export interface UploadResponse {

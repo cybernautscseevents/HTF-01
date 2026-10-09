@@ -40,6 +40,7 @@ class DataStore:
         self.network_cases: List[Dict[str, Any]] = []
         self.transaction_case_index: Dict[str, Dict[str, str]] = {}
         self.node_case_index: Dict[str, Dict[str, str]] = {}
+        self.manual_classifications: Dict[str, str] = {}
         self.is_loaded: bool = False
 
     def process_and_load(
@@ -59,6 +60,7 @@ class DataStore:
         """
         with self.lock:
             self.transactions_df = txn_df.copy()
+            self.manual_classifications = {}
 
             if accounts_df is None or accounts_df.empty:
                 self.accounts_df = synthesize_accounts_from_transactions(txn_df)
@@ -132,6 +134,7 @@ class DataStore:
                     "ml_score": ml_score,
                     "mule_probability": round(mule_prob, 4),
                     "classification": classification,
+                    "classification_source": "risk_score",
                     "is_flagged": is_flagged,
                     "is_mule": (classification in ["CRITICAL", "HIGH"]),
                     "alpha_applied": self.alpha,
@@ -175,6 +178,8 @@ class DataStore:
                         mule["classification"] = "CRITICAL"
                         mule["is_flagged"] = True
                         mule["is_mule"] = True
+
+            self._refresh_manual_classifications()
 
             # 7. Global Stats Calculation
             total_accounts = len(self.scores_cache)
@@ -381,6 +386,45 @@ class DataStore:
             self.stats["critical_accounts"] = sum(1 for a in self.scores_cache.values() if a["classification"] == "CRITICAL")
             self.stats["high_risk_accounts"] = sum(1 for a in self.scores_cache.values() if a["classification"] == "HIGH")
             self.stats["flagged_accounts"] = self.stats["critical_accounts"] + self.stats["high_risk_accounts"]
+
+    def set_manual_classification(self, account_id: str, classification: str) -> Optional[Dict[str, Any]]:
+        with self.lock:
+            account_key = str(account_id).strip()
+            level = classification.upper()
+            if account_key not in self.scores_cache:
+                return None
+            if level not in {"CRITICAL", "HIGH", "MEDIUM", "LOW"}:
+                raise ValueError("Classification must be CRITICAL, HIGH, MEDIUM, or LOW")
+            self.manual_classifications[account_key] = level
+            self._refresh_manual_classifications()
+            return self.scores_cache[account_key]
+
+    def _refresh_manual_classifications(self):
+        for account_id, classification in self.manual_classifications.items():
+            record = self.scores_cache.get(account_id)
+            if not record:
+                continue
+            record["classification"] = classification
+            record["classification_source"] = "manual"
+            record["is_flagged"] = classification in {"CRITICAL", "HIGH"}
+            record["is_mule"] = classification in {"CRITICAL", "HIGH"}
+
+        if self.scores_cache:
+            self.stats["critical_accounts"] = sum(
+                1 for item in self.scores_cache.values() if item["classification"] == "CRITICAL"
+            )
+            self.stats["high_risk_accounts"] = sum(
+                1 for item in self.scores_cache.values() if item["classification"] == "HIGH"
+            )
+            self.stats["medium_risk_accounts"] = sum(
+                1 for item in self.scores_cache.values() if item["classification"] == "MEDIUM"
+            )
+            self.stats["low_risk_accounts"] = sum(
+                1 for item in self.scores_cache.values() if item["classification"] == "LOW"
+            )
+            self.stats["flagged_accounts"] = (
+                self.stats["critical_accounts"] + self.stats["high_risk_accounts"]
+            )
 
     def get_accounts(
         self,
